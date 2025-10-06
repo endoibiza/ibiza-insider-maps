@@ -1,0 +1,19 @@
+{
+  "name": "Ibiza Insider - Premium Travel Guide",
+  "short_name": "Ibiza Insider",
+  "description": "Discover 1000+ hand-curated locations across Ibiza & Formentera. Premium travel guide with beaches, clubs, restaurants, and insider secrets.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#E94E87",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ],
+  "categories": ["travel", "lifestyle", "navigation"],
+  "prefer_related_applications": false
+}

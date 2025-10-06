@@ -1,0 +1,16 @@
+project_id = "zqgsgrwtxufxebaujegn"
+
+[auth]
+enabled = true
+
+[functions.payment-webhook]
+verify_jwt = false
+
+[functions.get-weather]
+verify_jwt = false
+
+[functions.get-news]
+verify_jwt = false
+
+[functions.validate-promo-code]
+verify_jwt = false
