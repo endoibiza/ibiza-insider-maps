@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { CloudSun, Loader2 } from 'lucide-react';
 import { WeatherSkeleton } from '@/components/ui/skeleton-loaders';
+import { ANALYTICS_EVENTS, getSafeErrorType, track } from '@/lib/analytics';
 
 interface WeatherWidgetProps {
   autoLoad?: boolean;
@@ -15,7 +16,7 @@ const WeatherWidget = ({ autoLoad = false }: WeatherWidgetProps) => {
   const [weatherData, setWeatherData] = useState<string | null>(null);
   const { toast } = useToast();
 
-  const fetchWeather = async () => {
+  const fetchWeather = useCallback(async () => {
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('get-weather', {
@@ -31,6 +32,10 @@ const WeatherWidget = ({ autoLoad = false }: WeatherWidgetProps) => {
       }
     } catch (error) {
       console.error('Weather fetch error:', error);
+      track(ANALYTICS_EVENTS.weatherLoadFailed, {
+        source: "weather_widget",
+        error_type: getSafeErrorType(error),
+      });
       toast({
         title: "Weather Error",
         description: error instanceof Error ? error.message : "Failed to fetch weather data",
@@ -39,13 +44,13 @@ const WeatherWidget = ({ autoLoad = false }: WeatherWidgetProps) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
 
   useEffect(() => {
     if (autoLoad) {
       fetchWeather();
     }
-  }, [autoLoad]);
+  }, [autoLoad, fetchWeather]);
 
   return (
     <Card className="w-full bg-gradient-card border-0 shadow-subtle">

@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { Newspaper, Loader2 } from 'lucide-react';
 import { NewsSkeleton } from '@/components/ui/skeleton-loaders';
+import { ANALYTICS_EVENTS, getSafeErrorType, track } from '@/lib/analytics';
 
 interface NewsWidgetProps {
   autoLoad?: boolean;
@@ -15,7 +16,7 @@ const NewsWidget = ({ autoLoad = false }: NewsWidgetProps) => {
   const [newsData, setNewsData] = useState<string | null>(null);
   const { toast } = useToast();
 
-  const fetchNews = async () => {
+  const fetchNews = useCallback(async () => {
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('get-news', {
@@ -31,6 +32,10 @@ const NewsWidget = ({ autoLoad = false }: NewsWidgetProps) => {
       }
     } catch (error) {
       console.error('News fetch error:', error);
+      track(ANALYTICS_EVENTS.newsLoadFailed, {
+        source: "news_widget",
+        error_type: getSafeErrorType(error),
+      });
       toast({
         title: "News Error",
         description: error instanceof Error ? error.message : "Failed to fetch news data",
@@ -39,13 +44,13 @@ const NewsWidget = ({ autoLoad = false }: NewsWidgetProps) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
 
   useEffect(() => {
     if (autoLoad) {
       fetchNews();
     }
-  }, [autoLoad]);
+  }, [autoLoad, fetchNews]);
 
   return (
     <Card className="w-full bg-gradient-card border-0 shadow-subtle">

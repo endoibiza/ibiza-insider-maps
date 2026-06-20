@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { CreditCard } from 'lucide-react';
+import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
 
 interface PayPalButtonProps {
   onSuccess: (paymentId: string) => void;
@@ -9,6 +10,13 @@ interface PayPalButtonProps {
 
 const PayPalButton: React.FC<PayPalButtonProps> = ({ onSuccess, onError }) => {
   const handlePayment = () => {
+    track(ANALYTICS_EVENTS.checkoutStarted, {
+      source: "paypal_button",
+      amount: 29.99,
+      currency: "EUR",
+      payment_method: "paypal",
+    });
+
     // PayPal integration - for now, simulate payment
     const paymentId = `pp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     

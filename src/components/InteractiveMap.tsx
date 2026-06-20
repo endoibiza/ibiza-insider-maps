@@ -14,6 +14,7 @@ import {
   Crown,
   Globe
 } from 'lucide-react';
+import { ANALYTICS_EVENTS, track, trackOnce } from '@/lib/analytics';
 
 const InteractiveMap = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -23,6 +24,14 @@ const InteractiveMap = () => {
   
   const allLocations = parseMapData();
   const categories = ['All', ...getCategories()];
+  const openPaywall = (location: string) => {
+    track(ANALYTICS_EVENTS.paywallCtaClicked, {
+      source: "interactive_map",
+      location,
+      feature_name: "interactive map",
+    });
+    setShowPaywall(true);
+  };
   
   // Show only preview content for non-premium users, full content for premium users
   const displayLocations = useMemo(() => {
@@ -49,26 +58,45 @@ const InteractiveMap = () => {
 
   const handleLocationClick = (url: string) => {
     if (!hasPremiumAccess) {
-      setShowPaywall(true);
+      track(ANALYTICS_EVENTS.mapPreviewClicked, {
+        source: "interactive_map",
+        feature_name: "interactive map",
+      });
+      openPaywall("preview_location_card");
       return;
     }
+    track(ANALYTICS_EVENTS.mapOpened, {
+      source: "interactive_map",
+      location: "location_card",
+    });
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const handleFilterChange = (category: string) => {
     if (!hasPremiumAccess) {
-      setShowPaywall(true);
+      openPaywall("locked_category_filter");
       return;
     }
     setSelectedCategory(category);
+    track(ANALYTICS_EVENTS.categoryFilterApplied, {
+      source: "interactive_map",
+      category,
+      result_count: displayLocations.length,
+    });
   };
 
   const handleSearchChange = (value: string) => {
     if (!hasPremiumAccess) {
-      setShowPaywall(true);
+      openPaywall("locked_search");
       return;
     }
     setSearchTerm(value);
+    if (value.trim().length >= 2) {
+      trackOnce("interactive_map_search_performed", ANALYTICS_EVENTS.searchPerformed, {
+        source: "interactive_map",
+        result_count: displayLocations.length,
+      });
+    }
   };
 
   return (
@@ -79,32 +107,32 @@ const InteractiveMap = () => {
           <div className="w-12 h-12 bg-gradient-to-br from-primary to-primary/70 rounded-lg flex items-center justify-center">
             <Globe className="w-6 h-6 text-primary-foreground" />
           </div>
-          <div>
-            <h2 className="text-2xl font-bold">Interactive Ibiza Map</h2>
+          <div className="min-w-0">
+            <h2 className="text-2xl font-bold">Preview Ibiza Maps</h2>
             <p className="text-muted-foreground">
               {hasPremiumAccess 
-                ? `Explore all ${allLocations.length} curated locations with full access`
-                : `Preview: 6 of ${allLocations.length} premium locations`
+                ? `Explore all ${allLocations.length} curated places with full access`
+                : `Preview 6 places from the full ${allLocations.length}+ place collection`
               }
             </p>
           </div>
-          <div className="flex gap-2 ml-auto">
+          <div className="flex flex-wrap gap-2 ml-auto justify-end">
             <Button asChild variant="outline" size="sm">
               <a 
                 href="https://www.ibiza-spotlight.com/night/events" 
                 target="_blank" 
                 rel="noopener noreferrer"
               >
-                📅 Events
+                Events
               </a>
             </Button>
             {!hasPremiumAccess && (
               <Button 
-                onClick={() => setShowPaywall(true)}
+                onClick={() => openPaywall("header_get_lifetime_access")}
                 size="sm"
               >
                 <Crown className="w-4 h-4 mr-2" />
-                Unlock All
+                Get Lifetime Access
               </Button>
             )}
           </div>
@@ -115,7 +143,7 @@ const InteractiveMap = () => {
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
             <Input
-              placeholder={hasPremiumAccess ? "Search locations..." : "🔒 Unlock to search"}
+              placeholder={hasPremiumAccess ? "Search locations..." : "Unlock to search all places"}
               value={searchTerm}
               onChange={(e) => handleSearchChange(e.target.value)}
               className="pl-10"
@@ -130,14 +158,14 @@ const InteractiveMap = () => {
         </div>
 
         {/* Category Pills */}
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-4 flex gap-2 overflow-x-auto overscroll-x-contain pb-2 [-webkit-overflow-scrolling:touch] sm:flex-wrap sm:overflow-visible">
           {categories.slice(0, 8).map((category) => (
             <Button
               key={category}
               variant={selectedCategory === category ? "default" : "outline"}
               size="sm"
               onClick={() => handleFilterChange(category)}
-              className="text-xs"
+              className="text-xs shrink-0"
               disabled={!hasPremiumAccess && category !== 'All'}
             >
               {category}
@@ -150,8 +178,8 @@ const InteractiveMap = () => {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setShowPaywall(true)}
-              className="text-xs border-dashed border-primary text-primary"
+              onClick={() => openPaywall("more_categories")}
+              className="text-xs shrink-0 border-dashed border-primary text-primary"
             >
               <Crown className="w-3 h-3 mr-1" />
               +{categories.length - 8} more
@@ -161,7 +189,7 @@ const InteractiveMap = () => {
       </div>
 
       {/* Virtual Map Grid */}
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+      <div className="grid min-w-0 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
         {displayLocations.map((location) => (
           <Card
             key={location.id}
@@ -206,19 +234,18 @@ const InteractiveMap = () => {
           <CardContent className="p-6 text-center">
             <Crown className="w-12 h-12 text-primary mx-auto mb-4" />
             <h3 className="text-xl font-semibold mb-2">
-              Unlock {allLocations.length - 6} More Locations
+              Preview 6 Places. Unlock the Full Island.
             </h3>
             <p className="text-muted-foreground mb-4">
-              Get complete access to all curated Ibiza spots, interactive filters, 
-              and Google Maps integration for just €29.99 (one-time payment).
+              Get 87+ curated Google Maps, all {allLocations.length}+ places, filters, and Google Maps links for one payment.
             </p>
             <Button 
-              onClick={() => setShowPaywall(true)}
+              onClick={() => openPaywall("premium_upsell")}
               size="lg"
               className="w-full max-w-sm"
             >
               <Crown className="w-4 h-4 mr-2" />
-              Get Premium Access
+              Get Lifetime Access - €29.99
             </Button>
           </CardContent>
         </Card>

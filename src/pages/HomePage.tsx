@@ -14,15 +14,27 @@ import {
   LogIn,
   LogOut,
   ExternalLink,
-  Newspaper
+  Newspaper,
+  CalendarDays
 } from "lucide-react";
 import { getCategories, parseMapData } from "@/data/maps-data";
 import { useAuth } from "@/components/AuthProvider";
 import PaywallModal from "@/components/PaywallModal";
 import InteractiveMap from "@/components/InteractiveMap";
 import SEOHead from "@/components/SEOHead";
+import { ANALYTICS_EVENTS, track } from "@/lib/analytics";
 
 import benirrasHero from "@/assets/benirras-beach.jpg";
+
+type MapLink = {
+  name: string;
+  url?: string;
+  icon?: string;
+  description?: string;
+  subtitle?: string;
+  website?: string;
+  category?: boolean;
+};
 
 const HomePage = () => {
   const categories = getCategories();
@@ -31,12 +43,21 @@ const HomePage = () => {
   const { user, hasPremiumAccess, signOut } = useAuth();
   const [showPaywall, setShowPaywall] = useState(false);
 
+  const openPaywall = (location: string, featureName = "home page") => {
+    track(ANALYTICS_EVENTS.paywallCtaClicked, {
+      source: "home_page",
+      location,
+      feature_name: featureName,
+    });
+    setShowPaywall(true);
+  };
+
   // Essential collections with direct links or category handling
   const essentialCollections = [
-    { name: "Ibiza Favorites", url: "https://maps.app.goo.gl/9hHCBkNtHWbUUThK9", icon: "⭐", description: "The absolute must-visit spots" },
-    { name: "Ibiza Masterlist", url: "https://maps.app.goo.gl/BQVXZHt2oNRzQmNi6", icon: "📋", description: "Over 1000 places across the island" },
+    { name: "Ibiza Favorites", url: "https://maps.app.goo.gl/9hHCBkNtHWbUUThK9", icon: "⭐", description: "The island shortlist worth starting with" },
+    { name: "Ibiza Masterlist", url: "https://maps.app.goo.gl/BQVXZHt2oNRzQmNi6", icon: "📋", description: "The complete island map system" },
     { name: "Beaches", url: "https://maps.app.goo.gl/moHbkoBsMeRWyG7o6", icon: "🏖️", description: "Ibiza Beach Insider Complete Guide" },
-    { name: "Clubs", url: "https://maps.app.goo.gl/QReFrGiEtf8vxojGA", icon: "🎉", description: "Superclubs to hidden gems" },
+    { name: "Clubs", url: "https://maps.app.goo.gl/QReFrGiEtf8vxojGA", icon: "🎉", description: "Superclubs, bars, and tonight's plan" },
     { name: "Restaurants", url: "https://maps.app.goo.gl/NKo8zMafHBkBHgvy7", icon: "🍽️", description: "Ibiza Restaurants Master List" },
     { name: "Explore Ibiza", url: "https://maps.app.goo.gl/LhnrauUunzPB83LcA", icon: "🌿", description: "Nature and outdoor adventures" },
     { name: "Ibiza Winter", url: "https://maps.app.goo.gl/7nUTwD76YJyWr3nJ6", icon: "❄️", description: "Places open during the winter season" },
@@ -134,27 +155,27 @@ const HomePage = () => {
   const features = [
     {
       icon: MapPinIcon,
-      title: `1500+ Verified Locations`,
-      description: "85+ Google Maps collections from true Ibiza insiders"
+      title: `1,500+ Island Places`,
+      description: "Organized into 87+ practical Google Maps"
     },
     {
       icon: ShieldCheckIcon,
-      title: "Verified & Accurate",
-      description: "Every location personally checked and validated"
+      title: "Built for Better Decisions",
+      description: "Beaches, food, clubs, hotels, shopping, and local finds"
     },
     {
       icon: ClockIcon,
-      title: "Always Current",
-      description: "Regular updates to keep information fresh"
+      title: "Plan Before You Land",
+      description: "Arrive with the island already organized"
     },
     {
       icon: UsersIcon,
-      title: "Local Knowledge",
-      description: "Insider tips you won't find elsewhere"
+      title: "Useful While You Are Here",
+      description: "Find better options when plans change"
     }
   ];
 
-  const MapCard = ({ name, url, icon, description, subtitle, website }: any) => (
+  const MapCard = ({ name, url, icon, description, subtitle, website }: MapLink) => (
     <Card className="group hover:shadow-xl hover:scale-[1.02] transition-all duration-300 border border-border/50 bg-card hover:border-primary/30">
       <CardContent className="p-6">
         <div className="flex flex-col items-center text-center space-y-3">
@@ -179,8 +200,18 @@ const HomePage = () => {
             className="w-full group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
             onClick={() => {
               if (!hasPremiumAccess) {
-                setShowPaywall(true);
+                track(ANALYTICS_EVENTS.mapPreviewClicked, {
+                  source: "home_page",
+                  location: "map_card",
+                  feature_name: name,
+                });
+                openPaywall("map_card", name);
               } else if (url) {
+                track(ANALYTICS_EVENTS.mapOpened, {
+                  source: "home_page",
+                  location: "map_card",
+                  feature_name: name,
+                });
                 window.open(url, '_blank');
               }
             }}
@@ -193,7 +224,7 @@ const HomePage = () => {
             ) : (
               <>
                 <Crown className="w-3 h-3 mr-2" />
-                Unlock
+                Preview
               </>
             )}
           </Button>
@@ -202,29 +233,39 @@ const HomePage = () => {
     </Card>
   );
 
-  const CompactMapButton = ({ name, url }: any) => (
+  const CompactMapButton = ({ name, url }: Pick<MapLink, "name" | "url">) => (
     <Button
       variant="outline"
       size="sm"
       className="h-auto py-3 px-4 text-sm hover:bg-primary hover:text-primary-foreground transition-all duration-300 border-border/50"
       onClick={() => {
         if (!hasPremiumAccess) {
-          setShowPaywall(true);
+          track(ANALYTICS_EVENTS.mapPreviewClicked, {
+            source: "home_page",
+            location: "compact_map_button",
+            feature_name: name,
+          });
+          openPaywall("compact_map_button", name);
         } else {
+          track(ANALYTICS_EVENTS.mapOpened, {
+            source: "home_page",
+            location: "compact_map_button",
+            feature_name: name,
+          });
           window.open(url, '_blank');
         }
       }}
     >
-      <span className="truncate">{hasPremiumAccess ? name : `🔒 ${name}`}</span>
+      <span className="truncate">{name}</span>
     </Button>
   );
 
   return (
     <>
       <SEOHead 
-        title="Ibiza Insider - Premium Travel Guide to Ibiza & Formentera"
-        description="Discover 1000+ hand-curated locations across Ibiza & Formentera. Premium travel guide with beaches, clubs, restaurants, hidden gems & local insider secrets."
-        keywords="Ibiza guide, Ibiza travel, Formentera guide, Ibiza beaches, Ibiza clubs, Ibiza restaurants, travel guide, insider tips"
+        title="Ibiza Maps - The Definitive Insider Map for Ibiza"
+        description="Beaches, restaurants, clubs, hotels, shopping, events, and hidden spots organized into 87+ curated Google Maps with 1,500+ Ibiza places."
+        keywords="Ibiza maps, Ibiza travel, Ibiza beaches, Ibiza clubs, Ibiza restaurants, Google Maps Ibiza, insider map Ibiza"
         canonicalPath="/"
       />
       <div className="min-h-screen bg-background">
@@ -233,7 +274,7 @@ const HomePage = () => {
         <div className="container mx-auto px-4 lg:px-6 py-3 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2">
             <h1 className="text-xl font-bold bg-gradient-hero bg-clip-text text-transparent">
-              Ibiza Insider
+              Ibiza Maps
             </h1>
           </Link>
           <div className="flex items-center gap-3">
@@ -252,7 +293,14 @@ const HomePage = () => {
                 </Button>
               </>
             ) : (
-              <Button variant="default" size="sm" onClick={() => window.location.href = '/auth'}>
+              <Button variant="default" size="sm" onClick={() => {
+                track(ANALYTICS_EVENTS.paywallCtaClicked, {
+                  source: "home_page",
+                  location: "header_sign_in",
+                  feature_name: "auth",
+                });
+                window.location.href = '/auth';
+              }}>
                 <LogIn className="w-4 h-4 sm:mr-2" />
                 <span className="hidden sm:inline">Sign In</span>
               </Button>
@@ -270,7 +318,7 @@ const HomePage = () => {
           <div className="absolute inset-0 bg-gradient-overlay" />
         </div>
         
-        <div className="relative z-10 container mx-auto px-4 lg:px-6 text-center max-w-5xl py-20">
+        <div className="relative z-10 container-safe text-center max-w-5xl py-20">
           {hasPremiumAccess && (
             <Badge className="mb-6 bg-white/10 backdrop-blur-sm text-white border-white/20 shadow-xl">
               <SparklesIcon className="w-4 h-4 mr-2" />
@@ -280,61 +328,78 @@ const HomePage = () => {
           
           <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight text-white drop-shadow-2xl">
             {hasPremiumAccess ? (
-              <>Welcome Back to Your <span className="text-accent">Ibiza Insider</span> Guide</>
+              <>Welcome Back to Your <span className="text-accent">Ibiza Maps</span></>
             ) : (
-              <>The Complete <span className="text-accent">Ibiza</span> Guide<br />Built by Locals, for Explorers</>
+              <>The Definitive <span className="text-accent">Insider Map</span><br />for Ibiza</>
             )}
           </h1>
           
           <p className="text-lg md:text-xl text-white/95 mb-10 max-w-3xl mx-auto leading-relaxed drop-shadow-lg">
             {hasPremiumAccess ? (
-              "Access all your premium locations, interactive maps, and curated collections. Your island adventure awaits."
+              "Open your curated maps, find the right places faster, and keep the island close while you are here."
             ) : (
-              "85+ curated Google Maps collections with 1500+ verified locations covering every corner of Ibiza — from iconic beaches and world-class clubs to hidden villages and local gems. Every spot is insider-approved and ready to navigate."
+              "Beaches, restaurants, clubs, hotels, shopping, events, and hidden spots - organized into 87+ curated Google Maps with 1,500+ places."
             )}
           </p>
           
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12">
+          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-10">
             {hasPremiumAccess ? (
               <Button 
                 size="lg" 
                 className="bg-white text-primary hover:bg-white/90 shadow-xl px-8"
                 onClick={() => {
                   document.getElementById('collections')?.scrollIntoView({ behavior: 'smooth' });
+                  track(ANALYTICS_EVENTS.externalLinkClicked, {
+                    source: "home_page",
+                    location: "hero_browse_collections",
+                  });
                 }}
               >
                 <MapPinIcon className="w-5 h-5 mr-2" />
                 Browse Collections
               </Button>
             ) : (
-              <Button 
-                size="lg" 
-                className="bg-white text-primary hover:bg-white/90 shadow-xl px-8"
-                onClick={() => setShowPaywall(true)}
-              >
-                <Crown className="w-5 h-5 mr-2" />
-                Unlock Full Access
-              </Button>
+              <>
+                <Button
+                  size="lg"
+                  className="bg-white text-primary hover:bg-white/90 shadow-xl px-8"
+                  onClick={() => {
+                    document.getElementById('collections')?.scrollIntoView({ behavior: 'smooth' });
+                    track(ANALYTICS_EVENTS.externalLinkClicked, {
+                      source: "home_page",
+                      location: "hero_preview_maps",
+                    });
+                  }}
+                >
+                  <MapPinIcon className="w-5 h-5 mr-2" />
+                  Preview the Maps
+                </Button>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="border-white/70 bg-white/10 text-white hover:bg-white hover:text-primary shadow-xl px-8"
+                  onClick={() => openPaywall("hero_get_lifetime_access")}
+                >
+                  Get Lifetime Access - €29.99
+                </Button>
+              </>
             )}
           </div>
           
           {!hasPremiumAccess && (
             <>
-              <p className="text-sm text-white/80 mb-8">
-                One-time purchase • Lifetime access • €29.99
-              </p>
-              <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-white/80">
+              <div className="flex flex-wrap items-center justify-center gap-4 text-sm text-white/85">
                 <div className="flex items-center gap-2">
                   <StarIcon className="w-4 h-4 fill-accent text-accent" />
-                  Premium Quality
+                  87+ Curated Maps
                 </div>
                 <div className="flex items-center gap-2">
                   <ShieldCheckIcon className="w-4 h-4 text-accent" />
-                  Verified Locations
+                  1,500+ Places
                 </div>
                 <div className="flex items-center gap-2">
                   <UsersIcon className="w-4 h-4 text-accent" />
-                  Local Insights
+                  One-Time Payment
                 </div>
               </div>
             </>
@@ -344,27 +409,27 @@ const HomePage = () => {
 
       {/* Events Section */}
       <section className="py-16 md:py-20 bg-gradient-section">
-        <div className="container mx-auto px-4 lg:px-6">
+        <div className="container-safe">
           <div className="text-center max-w-3xl mx-auto">
-            <div className="text-5xl mb-4">📅</div>
             <h2 className="text-3xl font-bold mb-4">Ibiza Events</h2>
             <p className="text-muted-foreground mb-6">
               Stay updated with the latest club nights, festivals, and local events happening across the island.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Button asChild size="lg" className="bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:from-purple-600 hover:to-pink-600 shadow-lg">
-                <a href="https://www.ibiza-spotlight.com/night/events" target="_blank" rel="noopener noreferrer">
-                  🎉 Party Calendar
-                </a>
+                <Link to="/events">
+                  <CalendarDays className="w-5 h-5 mr-2 inline" />
+                  Ibiza Events
+                </Link>
               </Button>
               <Button asChild size="lg" className="bg-gradient-accent text-accent-foreground hover:opacity-90 shadow-lg">
-                <a href="https://www.ibiza-spotlight.com/events" target="_blank" rel="noopener noreferrer">
-                  📅 Events Calendar
-                </a>
+                <Link to="/map">
+                  Island Maps
+                </Link>
               </Button>
               <Button asChild size="lg" className="bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:from-blue-600 hover:to-cyan-600 shadow-lg">
                 <Link to="/weather">
-                  🌤️ Ibiza Weather
+                  Ibiza Weather
                 </Link>
               </Button>
               <Button asChild size="lg" className="bg-gradient-to-r from-orange-500 to-red-500 text-white hover:from-orange-600 hover:to-red-600 shadow-lg">
@@ -381,11 +446,11 @@ const HomePage = () => {
       {/* Features Section - Only for non-premium */}
       {!hasPremiumAccess && (
         <section className="py-16 md:py-20">
-          <div className="container mx-auto px-4 lg:px-6">
+          <div className="container-safe">
             <div className="text-center mb-16 max-w-3xl mx-auto">
-              <h2 className="text-4xl font-bold mb-4">Why Ibiza Insider?</h2>
+              <h2 className="text-4xl font-bold mb-4">Why Ibiza Maps?</h2>
               <p className="text-xl text-muted-foreground">
-                More than just another travel guide — get access to carefully curated locations with authentic insider knowledge.
+                More useful than another travel guide: a practical map system for deciding where to swim, eat, go out, stay, shop, and explore.
               </p>
             </div>
             
@@ -409,13 +474,13 @@ const HomePage = () => {
 
       {/* Main Collections Section */}
       <section id="collections" className="py-16 md:py-20 bg-gradient-section">
-        <div className="container mx-auto px-4 lg:px-6">
+        <div className="container-safe">
           {/* Essential Collections */}
           <div className="mb-20">
             <div className="text-center mb-12 max-w-3xl mx-auto">
               <h2 className="text-4xl font-bold mb-4">Essential Collections</h2>
               <p className="text-xl text-muted-foreground">
-                Your most important Ibiza resources — from favorites to hidden gems
+                Your most important Ibiza resources - from first picks to local finds
               </p>
             </div>
             
@@ -429,7 +494,7 @@ const HomePage = () => {
           {/* Formentera Section */}
           <div className="mb-20">
             <div className="text-center mb-10">
-              <h3 className="text-3xl font-bold mb-3">🏝️ Formentera</h3>
+              <h3 className="text-3xl font-bold mb-3">Formentera</h3>
               <p className="text-muted-foreground">Discover the neighboring paradise island</p>
             </div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -442,7 +507,7 @@ const HomePage = () => {
           {/* Restaurant Themes */}
           <div className="mb-20">
             <div className="text-center mb-10">
-              <h3 className="text-3xl font-bold mb-3">🍽️ Restaurant Themes</h3>
+              <h3 className="text-3xl font-bold mb-3">Restaurant Themes</h3>
               <p className="text-muted-foreground">Find the perfect dining experience for any occasion</p>
             </div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
@@ -455,7 +520,7 @@ const HomePage = () => {
           {/* Villages & Areas */}
           <div className="mb-20">
             <div className="text-center mb-10">
-              <h3 className="text-3xl font-bold mb-3">🏘️ Villages & Areas</h3>
+              <h3 className="text-3xl font-bold mb-3">Villages & Areas</h3>
               <p className="text-muted-foreground">Explore Ibiza's charming villages and neighborhoods</p>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
@@ -468,7 +533,7 @@ const HomePage = () => {
           {/* Nature & Outdoors */}
           <div className="mb-20">
             <div className="text-center mb-10">
-              <h3 className="text-3xl font-bold mb-3">🌿 Nature & Outdoors</h3>
+              <h3 className="text-3xl font-bold mb-3">Nature & Outdoors</h3>
               <p className="text-muted-foreground">Experience Ibiza's natural beauty</p>
             </div>
             <div className="grid sm:grid-cols-2 gap-5 max-w-2xl mx-auto">
@@ -481,7 +546,7 @@ const HomePage = () => {
           {/* Food Delivery */}
           <div className="mb-20">
             <div className="text-center mb-10">
-              <h3 className="text-3xl font-bold mb-3">🚚 Food Delivery</h3>
+              <h3 className="text-3xl font-bold mb-3">Food Delivery</h3>
               <p className="text-muted-foreground">Top delivery services on the island</p>
             </div>
             <div className="grid sm:grid-cols-2 gap-5 max-w-2xl mx-auto">
@@ -509,22 +574,21 @@ const HomePage = () => {
       {/* CTA Section - Only for non-premium */}
       {!hasPremiumAccess && (
         <section className="py-16 md:py-20 bg-gradient-hero text-primary-foreground">
-          <div className="container mx-auto px-4 lg:px-6 text-center">
+          <div className="container-safe text-center">
             <h2 className="text-4xl font-bold mb-4">
-              Ready to Explore Ibiza Like a Local?
+              Ibiza Is Easier When the Island Is Already Mapped
             </h2>
             <p className="text-xl mb-10 opacity-90 max-w-2xl mx-auto">
-              Get instant access to all {totalLocations}+ locations with one simple purchase. Lifetime access, all future updates included.
+              Get lifetime access to 87+ curated Google Maps and {totalLocations}+ Ibiza places for one payment.
             </p>
             
             <Button 
               size="lg" 
               variant="secondary" 
               className="shadow-xl px-8"
-              onClick={() => setShowPaywall(true)}
+              onClick={() => openPaywall("bottom_cta")}
             >
-              <Crown className="w-5 h-5 mr-2" />
-              Unlock Full Access — €29.99
+              Get Lifetime Access - €29.99
             </Button>
           </div>
         </section>

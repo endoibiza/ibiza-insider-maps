@@ -1,14 +1,17 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Crown, Lock } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
+import PaywallModal from "@/components/PaywallModal";
+import { ANALYTICS_EVENTS, track } from "@/lib/analytics";
 
 const CategoryPage = () => {
   const { slug } = useParams();
   const { hasPremiumAccess } = useAuth();
+  const [showPaywall, setShowPaywall] = useState(false);
 
   // Category data mapping
   const categoryData: Record<string, { title: string; icon: string; lists: { name: string; url: string; description?: string }[] }> = {
@@ -193,14 +196,82 @@ const CategoryPage = () => {
 
   if (!hasPremiumAccess) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">Premium Access Required</h1>
-          <p className="text-muted-foreground mb-6">This category requires premium access.</p>
-          <Button asChild>
-            <Link to="/">Return Home</Link>
-          </Button>
+      <div className="min-h-screen bg-background">
+        <div className="border-b border-border/40 bg-background/95 backdrop-blur-sm sticky top-0 z-50">
+          <div className="container-safe py-4">
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/">
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Back to Home
+              </Link>
+            </Button>
+          </div>
         </div>
+
+        <main className="container-safe py-12">
+          <div className="mx-auto max-w-3xl text-center mb-10">
+            <div className="text-5xl mb-4">{category.icon}</div>
+            <Badge variant="secondary" className="mb-4">Preview</Badge>
+            <h1 className="text-3xl md:text-5xl font-bold mb-4">
+              {category.title} Maps
+            </h1>
+            <p className="text-lg text-muted-foreground">
+              Preview this collection, then unlock the full Ibiza Maps system: 87+ curated Google Maps and 1,500+ island places.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto mb-10">
+            {category.lists.slice(0, 2).map((list, index) => (
+              <Card key={index} className="bg-gradient-card border border-border/60">
+                <CardContent className="p-6">
+                  <div className="flex items-start gap-4">
+                    <div className="text-3xl">{category.icon}</div>
+                    <div className="min-w-0">
+                      <h2 className="font-semibold text-lg mb-2">{list.name}</h2>
+                      {list.description && (
+                        <p className="text-sm text-muted-foreground mb-4">{list.description}</p>
+                      )}
+                      <Badge variant="secondary">Google Maps list</Badge>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <Card className="max-w-3xl mx-auto border-primary/20 bg-gradient-to-br from-primary/5 to-primary/10">
+            <CardContent className="p-6 text-center">
+              <Lock className="w-10 h-10 text-primary mx-auto mb-4" />
+              <h2 className="text-2xl font-semibold mb-2">
+                Unlock the full {category.title} collection
+              </h2>
+              <p className="text-muted-foreground mb-6">
+                Get this map plus beaches, restaurants, clubs, hotels, shopping, villages, events, and hidden spots in one practical island system.
+              </p>
+              <Button
+                size="lg"
+                onClick={() => {
+                  track(ANALYTICS_EVENTS.paywallCtaClicked, {
+                    source: "category_page",
+                    location: "category_unlock_cta",
+                    feature_name: `${category.title} maps`,
+                    category: category.title,
+                  });
+                  setShowPaywall(true);
+                }}
+              >
+                <Crown className="w-4 h-4 mr-2" />
+                Get Lifetime Access - €29.99
+              </Button>
+            </CardContent>
+          </Card>
+        </main>
+
+        <PaywallModal
+          isOpen={showPaywall}
+          onClose={() => setShowPaywall(false)}
+          featureName={`${category.title} maps`}
+        />
       </div>
     );
   }
@@ -209,7 +280,7 @@ const CategoryPage = () => {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <div className="border-b border-border/40 bg-background/95 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4">
+        <div className="container-safe py-4">
           <div className="flex items-center gap-4">
             <Button variant="outline" size="sm" asChild>
               <Link to="/">
@@ -226,7 +297,7 @@ const CategoryPage = () => {
       </div>
 
       {/* Content */}
-      <div className="container mx-auto px-4 py-12">
+      <div className="container-safe py-12">
         <div className="text-center mb-12">
           <h2 className="text-3xl font-bold mb-4">
             {category.title} Collections
@@ -254,15 +325,21 @@ const CategoryPage = () => {
                     Google Maps List
                   </Badge>
                 </div>
-                <Button 
+                <Button
                   className="w-full"
                   asChild
                 >
-                  <a 
-                    href={list.url} 
-                    target="_blank" 
+                  <a
+                    href={list.url}
+                    target="_blank"
                     rel="noopener noreferrer"
                     referrerPolicy="no-referrer"
+                    onClick={() => track(ANALYTICS_EVENTS.mapOpened, {
+                      source: "category_page",
+                      location: "category_list",
+                      feature_name: list.name,
+                      category: category.title,
+                    })}
                   >
                     Open in Google Maps
                   </a>

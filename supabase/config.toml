@@ -14,3 +14,9 @@ verify_jwt = false
 
 [functions.validate-promo-code]
 verify_jwt = false
+
+[functions.sync-fourvenues-auth]
+verify_jwt = false
+
+[functions.sync-fourvenues-events]
+verify_jwt = false
