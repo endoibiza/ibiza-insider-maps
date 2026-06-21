@@ -1,0 +1,44 @@
+name: Event lineup browser sweep
+
+on:
+  workflow_dispatch:
+    inputs:
+      window_days:
+        description: Days ahead to scan
+        required: false
+        default: "14"
+      limit:
+        description: Maximum events to inspect
+        required: false
+        default: "40"
+  schedule:
+    - cron: "20 4 * * *"
+
+jobs:
+  shadow-lineup-sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      WINDOW_DAYS: ${{ inputs.window_days || '14' }}
+      LIMIT: ${{ inputs.limit || '40' }}
+      RUN_TYPE: daily
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+
+      - name: Run shadow lineup sweep
+        run: node scripts/event-lineup-browser-sweep.mjs

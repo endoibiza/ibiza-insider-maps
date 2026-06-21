@@ -107,6 +107,71 @@ Do not pass `write_events: true` until the shadow candidates have been reviewed 
 - no changes to `featured_on_party_calendar`
 - no changes to Fourvenues-owned rows
 
+## Lineup Sweep Automation
+
+Lineup repair is staged before public event text is changed.
+
+New surfaces:
+
+- `event_lineup_sweep_targets`: upcoming non-Fourvenues events with missing, weak, or polluted lineup text.
+- `event_lineup_review_queue`: proposed lineup replacements with source URL, source type, confidence, current text, proposed text, and approval status.
+- `sweep-event-lineups`: protected Supabase Edge Function for simple HTML/API lineup scans.
+- `.github/workflows/event-lineup-browser-sweep.yml`: Playwright-based cloud runner for JavaScript-heavy venue pages.
+
+Default posture:
+
+- Shadow only.
+- No public `ibiza_events` writes.
+- No changes to `mikes_pick`, `featured_on_party_calendar`, slugs, Fourvenues booking fields, or Fourvenues-owned rows.
+- Public lineup text must not include room labels, verification timestamps, agent run IDs, or internal notes.
+
+Manual Supabase shadow sweep:
+
+```bash
+source .sync-admin-token.local
+
+curl -sS -X POST "https://zqgsgrwtxufxebaujegn.supabase.co/functions/v1/sweep-event-lineups" \
+  -H "content-type: application/json" \
+  -H "x-sync-admin-token: ${SYNC_ADMIN_TOKEN}" \
+  --data '{
+    "run_type": "manual",
+    "write_events": false,
+    "auto_apply": false,
+    "start_date": "2026-06-21",
+    "end_date": "2026-07-05",
+    "limit": 50
+  }'
+```
+
+Review queries:
+
+```sql
+select issue_type, source_type, count(*)
+from public.event_lineup_sweep_targets
+group by issue_type, source_type
+order by count(*) desc;
+
+select
+  event_name,
+  event_date,
+  venue,
+  source_type,
+  lineup_confidence,
+  approval_status,
+  current_lineup_details,
+  proposed_lineup_details,
+  source_url
+from public.event_lineup_review_queue
+order by created_at desc
+limit 50;
+```
+
+GitHub Actions requirements:
+
+- Add repository secrets `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
+- The workflow is scheduled for a daily shadow browser sweep and can also be run manually.
+- It writes snapshots and lineup proposals only; it does not update public events.
+
 ## Lovable Cutover Guidance
 
 Lovable should read events from Supabase only. Do not reintroduce Notion as an event runtime, event write target, or sync source.

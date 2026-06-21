@@ -24,5 +24,8 @@ verify_jwt = false
 [functions.sync-ibiza-events-agent]
 verify_jwt = false
 
+[functions.sweep-event-lineups]
+verify_jwt = false
+
 [functions.backfill-notion-events]
 verify_jwt = false
