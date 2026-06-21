@@ -44,7 +44,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm ci
+          npm install
           npm install --no-save playwright
           npx playwright install --with-deps chromium
 
