@@ -8,16 +8,22 @@ const requiredEnv = (name) => {
 };
 
 const normalizeWhitespace = (value) => String(value || "").replace(/\s+/g, " ").trim();
+const decodeHtmlEntities = (value) =>
+  String(value || "")
+    .replace(/&#(\d+);/g, (_match, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_match, code) => String.fromCharCode(parseInt(code, 16)))
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'");
+
 const stripHtml = (value) =>
   normalizeWhitespace(
-    String(value || "")
+    decodeHtmlEntities(value)
       .replace(/<script[\s\S]*?<\/script>/gi, " ")
       .replace(/<style[\s\S]*?<\/style>/gi, " ")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/&nbsp;/g, " ")
-      .replace(/&amp;/g, "&")
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'"),
+      .replace(/<[^>]+>/g, " "),
   );
 
 const sanitizeLineup = (value, fallback = "") => {
@@ -28,9 +34,9 @@ const sanitizeLineup = (value, fallback = "") => {
   return normalizeWhitespace(cleaned || fallback).slice(0, 750);
 };
 
-const weakLineupPattern = /^(tba|tbc|lineup tba|to be announced|more tba|coming soon)$/i;
+const weakLineupPattern = /^(tba|tbc|line\s*up\s*tba|to be announced|more tba|coming soon|line\s*up\s*coming soon)\.?$/i;
 const genericLineupPattern =
-  /(?:\b(?:resident\s+djs?|special\s+guests?|guest\s+djs?|lineup\s+coming\s+soon|more\s+(?:artists|names|acts|djs)?\s*(?:tba|soon)?|and\s+more)\b|&\s*more|&#038;\s*more)/i;
+  /(?:\b(?:resident\s+djs?|special\s+guests?|guest\s+djs?|line\s*up\s+coming\s+soon|coming\s+soon|more\s+(?:artists|names|acts|djs)?\s*(?:tba|soon)?|and\s+more)\b|&\s*more)/i;
 const isWeakLineup = (value) => {
   const normalized = normalizeWhitespace(value);
   return !normalized || weakLineupPattern.test(normalized) || /\b(agent run|run id|verified on|last verified)\b/i.test(normalized);
