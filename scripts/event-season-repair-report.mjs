@@ -211,6 +211,40 @@ const sourceLinkCoverage = {
   needs_review_source_links: upcomingSourceLinks.filter((link) => link.status === "needs_review").length,
 };
 
+const issueFlagsFor = (row) =>
+  [
+    row.missingLineup && "missing_lineup",
+    row.weakLineup && "weak_tba_lineup",
+    row.genericLineup && "generic_lineup",
+    row.missingUrl && "missing_url",
+    row.genericUrl && "generic_url",
+    row.spotlightUrl && "spotlight_url",
+    row.ticketingUrl && "ticketing_url",
+  ].filter(Boolean);
+
+const rowPriority = (row) =>
+  (row.missingUrl ? 10 : 0) +
+  (row.missingLineup ? 9 : 0) +
+  (row.weakLineup ? 7 : 0) +
+  (row.genericLineup ? 5 : 0) +
+  (row.genericUrl ? 4 : 0) +
+  (row.ticketingUrl ? 3 : 0) +
+  (row.spotlightUrl ? 2 : 0);
+
+const sampleRows = (filterFn, limit = 25) =>
+  issueRows
+    .filter(filterFn)
+    .sort((left, right) => rowPriority(right) - rowPriority(left) || String(left.event.date).localeCompare(String(right.event.date)))
+    .slice(0, limit)
+    .map((row) => [
+      row.event.date,
+      row.event.venue,
+      row.event.event_name,
+      issueFlagsFor(row).join(", "),
+      normalizeWhitespace(row.event.lineup_details).slice(0, 120),
+      row.event.event_url || "",
+    ]);
+
 const runRows = recentRuns.map((run) => [
   run.started_at,
   run.run_type,
@@ -271,6 +305,36 @@ const report = [
   "### Source Link Status",
   "",
   formatTable(["Status", "Count"], topCounts(sourceLinkStatusCounts, 20)),
+  "",
+  "## Exact Repair Samples",
+  "",
+  "### Missing URL Rows",
+  "",
+  formatTable(
+    ["Date", "Venue", "Event", "Flags", "Current Lineup", "Current URL"],
+    sampleRows((row) => row.missingUrl, 40),
+  ),
+  "",
+  "### Missing Or Weak Lineup Rows",
+  "",
+  formatTable(
+    ["Date", "Venue", "Event", "Flags", "Current Lineup", "Current URL"],
+    sampleRows((row) => row.missingLineup || row.weakLineup, 40),
+  ),
+  "",
+  "### Spotlight Or Generic URL Rows",
+  "",
+  formatTable(
+    ["Date", "Venue", "Event", "Flags", "Current Lineup", "Current URL"],
+    sampleRows((row) => row.spotlightUrl || row.genericUrl, 40),
+  ),
+  "",
+  "### Ticketing URL Rows",
+  "",
+  formatTable(
+    ["Date", "Venue", "Event", "Flags", "Current Lineup", "Current URL"],
+    sampleRows((row) => row.ticketingUrl, 40),
+  ),
   "",
   "## Lineup Proposal Staging",
   "",
