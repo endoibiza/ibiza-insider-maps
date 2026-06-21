@@ -27,6 +27,7 @@ This runbook covers the remaining steps after the Supabase-first events foundati
 - Old Notion agent behavior is captured locally for replacement work:
   - `docs/ibiza-events-agent-replacement-snapshot.md`
   - `docs/hermes-openclaw-event-sweep-packets.md`
+- The captured Notion permissions are historical behavior/spec context only. They do not grant the replacement system permission to write Notion; replacement writes stage in Supabase first.
 - GitHub Actions browser-sweep activation is still blocked until GitHub auth has `workflow` scope or the workflow template is installed manually.
 
 ## Required Secret
@@ -181,6 +182,7 @@ GitHub Actions requirements:
 ## Hermes/OpenClaw Season Sweep
 
 Use `docs/hermes-openclaw-event-sweep-packets.md` as the bounded worker contract.
+Use `docs/ibiza-events-agent-replacement-snapshot.md` as the preserved old-agent behavior contract.
 
 Allowed:
 
@@ -188,6 +190,7 @@ Allowed:
 - compare source evidence to Supabase events;
 - stage source snapshots, event candidates, source links, and lineup proposals;
 - report blocked or low-confidence sources.
+- run municipal/local sweeps and Known Artists cross-checks as staging/review tasks.
 
 Forbidden without separate approval:
 

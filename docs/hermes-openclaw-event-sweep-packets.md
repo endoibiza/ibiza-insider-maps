@@ -94,7 +94,65 @@ Expected output:
 - `event_candidates` rows with `auto_safe`, `needs_review`, or `duplicate` review state.
 - Source snapshots and a concise source-failure list.
 
-## Packet D: Ibiza X Signal Context
+## Packet D: Municipal And Cultural Sweep
+
+Objective: prevent Ibiza Maps from becoming club-only by staging local/cultural/fiesta events from official municipal sources.
+
+Allowed actions:
+
+- Check Santa Eularia, Eivissa, Sant Antoni, Sant Josep, Sant Joan, Consell, and Balearic tourism sources.
+- Fetch programme PDFs or official agenda pages where available.
+- Split multi-day fiesta programmes into named, dated event candidates.
+- Translate Spanish/Catalan descriptions into English while preserving proper nouns.
+- Stage candidates with source URLs and concise public-safe descriptions.
+
+Forbidden actions:
+
+- Do not publish umbrella rows when named dated sub-events exist.
+- Do not invent venue options, event-series options, or source labels.
+- Do not treat generic tourism listings as events.
+- Do not write to Notion or public `ibiza_events`.
+
+Stop conditions:
+
+- Programme date cannot be resolved absolutely.
+- Source is a broad calendar with no event-specific detail.
+- Venue cannot be mapped and `Other` would hide important location detail.
+
+Expected output:
+
+- `event_candidates` rows with `Type = Cultural` or `Type = Local` proposed.
+- `event_source_snapshots` rows.
+- Review notes for programmes requiring manual splitting.
+
+## Packet E: Known Artists Cross-Check
+
+Objective: identify existing People/Known Artists links for staged or existing club events without creating new people records.
+
+Allowed actions:
+
+- Read event lineups and existing People/Known Artists reference data where access is explicitly available.
+- Match by full name, artist name, and obvious aliases.
+- Stage suggested artist relations or QA notes.
+
+Forbidden actions:
+
+- Do not create new People records.
+- Do not write public event fields.
+- Do not silently skip obvious artists if lookup returns zero; flag for review.
+
+Stop conditions:
+
+- Artist identity is ambiguous.
+- Multiple People records could match one artist.
+- Source lineup is generic or TBA.
+
+Expected output:
+
+- Suggested existing-artist links staged for review.
+- Missing/ambiguous artist QA list.
+
+## Packet F: Ibiza X Signal Context
 
 Objective: use X/Twitter only as an upstream lead source for event discovery.
 
@@ -121,6 +179,13 @@ Expected output:
 - Staged leads only.
 - Clear source attribution and confidence.
 
+## Cadence
+
+- Daily: today, newly published future events, and next-7-days recheck.
+- Sunday: full published-season sweep.
+- Every 2 weeks: recurring local/cultural/community recheck.
+- Full-season sweeps should also cross-check the last 30 days of X Daily Digest event fields as supporting signal.
+
 ## Default Review Rule
 
 All packets default to shadow mode. Public writes require a separate apply step that names exact rows/proposals and passes these checks:
@@ -130,3 +195,4 @@ All packets default to shadow mode. Public writes require a separate apply step 
 - public text contains no internal metadata;
 - protected fields are untouched;
 - Fourvenues-owned rows are ignored unless the Fourvenues sync is the writer.
+- source labels, status values, venue names, and event-series values stay inside the approved schema.
