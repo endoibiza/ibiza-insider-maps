@@ -1,0 +1,34 @@
+name: Event lineup review maintenance
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Apply staging-only rejections
+        required: false
+        default: "false"
+
+jobs:
+  lineup-review-maintenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    name: lineup-review-maintenance
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      APPLY: ${{ inputs.apply }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Reclassify generic lineup proposals
+        run: node scripts/event-lineup-review-maintenance.mjs
