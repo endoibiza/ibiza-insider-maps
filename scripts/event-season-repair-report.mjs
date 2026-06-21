@@ -7,7 +7,17 @@ const requiredEnv = (name) => {
   return value;
 };
 
-const normalizeWhitespace = (value) => String(value || "").replace(/\s+/g, " ").trim();
+const decodeHtmlEntities = (value) =>
+  String(value || "")
+    .replace(/&#(\d+);/g, (_match, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_match, code) => String.fromCharCode(parseInt(code, 16)))
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'");
+
+const normalizeWhitespace = (value) => decodeHtmlEntities(value).replace(/\s+/g, " ").trim();
 
 const today = new Date();
 const addDays = (date, days) => {
