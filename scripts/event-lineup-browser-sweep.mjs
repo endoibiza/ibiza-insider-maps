@@ -29,9 +29,15 @@ const sanitizeLineup = (value, fallback = "") => {
 };
 
 const weakLineupPattern = /^(tba|tbc|lineup tba|to be announced|more tba|coming soon)$/i;
+const genericLineupPattern =
+  /(?:\b(?:resident\s+djs?|special\s+guests?|guest\s+djs?|lineup\s+coming\s+soon|more\s+(?:artists|names|acts|djs)?\s*(?:tba|soon)?|and\s+more)\b|&\s*more|&#038;\s*more)/i;
 const isWeakLineup = (value) => {
   const normalized = normalizeWhitespace(value);
   return !normalized || weakLineupPattern.test(normalized) || /\b(agent run|run id|verified on|last verified)\b/i.test(normalized);
+};
+const isGenericLineupProposal = (value) => {
+  const normalized = normalizeWhitespace(value);
+  return !normalized || genericLineupPattern.test(normalized);
 };
 
 const normalizeKeyPart = (value) =>
@@ -205,7 +211,10 @@ try {
       if (!proposed || isWeakLineup(proposed) || proposed === normalizeWhitespace(target.lineup_details || "")) continue;
 
       const confidence = Math.min(0.95, 0.82 + (target.source_type === "official_venue" ? 0.08 : 0.03));
-      const approvalStatus = isWeakLineup(target.lineup_details) && ["official_venue", "ibiza_spotlight"].includes(target.source_type) && confidence >= 0.86
+      const approvalStatus = isWeakLineup(target.lineup_details) &&
+        !isGenericLineupProposal(proposed) &&
+        ["official_venue", "ibiza_spotlight"].includes(target.source_type) &&
+        confidence >= 0.86
         ? "auto_safe"
         : "pending";
       const proposalHash = await sha256(`${target.event_id}|${sourceUrl}|${proposed}`);

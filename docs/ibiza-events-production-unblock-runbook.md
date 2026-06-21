@@ -24,6 +24,10 @@ This runbook covers the remaining steps after the Supabase-first events foundati
   - `notion_page_id LIKE 'fourvenues:%'`
 - `sync-ibiza-events-agent` is deployed and defaults to shadow mode unless `write_events: true` is explicitly passed.
 - No agent-owned or Fourvenues-owned public event rows should exist before the first reviewed shadow run.
+- Old Notion agent behavior is captured locally for replacement work:
+  - `docs/ibiza-events-agent-replacement-snapshot.md`
+  - `docs/hermes-openclaw-event-sweep-packets.md`
+- GitHub Actions browser-sweep activation is still blocked until GitHub auth has `workflow` scope or the workflow template is installed manually.
 
 ## Required Secret
 
@@ -124,6 +128,7 @@ Default posture:
 - No public `ibiza_events` writes.
 - No changes to `mikes_pick`, `featured_on_party_calendar`, slugs, Fourvenues booking fields, or Fourvenues-owned rows.
 - Public lineup text must not include room labels, verification timestamps, agent run IDs, or internal notes.
+- Generic lineup text such as `resident DJs`, `special guests`, `& more`, `TBA`, or `coming soon` must be staged for review, not marked auto-safe.
 
 Manual Supabase shadow sweep:
 
@@ -169,8 +174,29 @@ limit 50;
 GitHub Actions requirements:
 
 - Add repository secrets `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
-- The workflow is scheduled for a daily shadow browser sweep and can also be run manually.
+- Install `.github/workflows/event-lineup-browser-sweep.yml` from `docs/event-lineup-browser-sweep.workflow.yml.template` after GitHub auth has `workflow` scope.
+- The workflow is scheduled for a daily shadow browser sweep and can also be run manually after installation.
 - It writes snapshots and lineup proposals only; it does not update public events.
+
+## Hermes/OpenClaw Season Sweep
+
+Use `docs/hermes-openclaw-event-sweep-packets.md` as the bounded worker contract.
+
+Allowed:
+
+- read official sources and render JavaScript-heavy pages;
+- compare source evidence to Supabase events;
+- stage source snapshots, event candidates, source links, and lineup proposals;
+- report blocked or low-confidence sources.
+
+Forbidden without separate approval:
+
+- public `ibiza_events` writes;
+- Notion writes;
+- Lovable publishing;
+- credential/secret changes;
+- service restarts;
+- external sends.
 
 ## Lovable Cutover Guidance
 

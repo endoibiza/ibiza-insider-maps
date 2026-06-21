@@ -433,10 +433,17 @@ const buildSourceForTarget = (target: SweepTarget, sourceUrl: string): EventSour
 
 const weakLineupPattern = /^(tba|tbc|lineup tba|to be announced|more tba|coming soon)$/i;
 const internalNoisePattern = /\b(agent run|run id|verified on|last verified)\b/i;
+const genericLineupPattern =
+  /(?:\b(?:resident\s+djs?|special\s+guests?|guest\s+djs?|lineup\s+coming\s+soon|more\s+(?:artists|names|acts|djs)?\s*(?:tba|soon)?|and\s+more)\b|&\s*more|&#038;\s*more)/i;
 
 export const isWeakLineupDetails = (value: string | null | undefined) => {
   const normalized = normalizeWhitespace(value || "");
   return !normalized || weakLineupPattern.test(normalized) || internalNoisePattern.test(normalized);
+};
+
+const isGenericLineupProposal = (value: string | null | undefined) => {
+  const normalized = normalizeWhitespace(value || "");
+  return !normalized || genericLineupPattern.test(normalized);
 };
 
 const normalizeKeyPart = (value: string | null | undefined) =>
@@ -475,8 +482,18 @@ const calculateConfidence = (sourceType: string, candidateConfidence: number, cu
   return Math.min(0.99, Math.max(0.1, candidateConfidence + sourceBonus + weakBonus));
 };
 
-const approvalStatusForProposal = (sourceType: string, confidence: number, currentLineup: string | null | undefined) => {
-  if (isWeakLineupDetails(currentLineup) && ["official_venue", "ibiza_spotlight"].includes(sourceType) && confidence >= 0.86) {
+const approvalStatusForProposal = (
+  sourceType: string,
+  confidence: number,
+  currentLineup: string | null | undefined,
+  proposedLineup: string,
+) => {
+  if (
+    isWeakLineupDetails(currentLineup) &&
+    !isGenericLineupProposal(proposedLineup) &&
+    ["official_venue", "ibiza_spotlight"].includes(sourceType) &&
+    confidence >= 0.86
+  ) {
     return "auto_safe";
   }
   return "pending";
@@ -599,8 +616,7 @@ serve(async (req) => {
         if (!proposedLineup || proposedLineup === normalizeWhitespace(target.lineup_details || "")) continue;
 
         const confidence = calculateConfidence(sourceType, candidate.confidence, target.lineup_details);
-        const approvalStatus = approvalStatusForProposal(sourceType, confidence, target.lineup_details);
-        if (approvalStatus === "auto_safe") proposalsAutoSafe += 1;
+        const approvalStatus = approvalStatusForProposal(sourceType, confidence, target.lineup_details, proposedLineup);
         const proposalHash = await sha256(`${target.event_id}|${sourceUrl}|${proposedLineup}`);
 
         const { data: proposal, error: proposalError } = await supabase
@@ -633,6 +649,7 @@ serve(async (req) => {
 
         if (proposalError) throw proposalError;
         proposalsInserted += 1;
+        if (proposal.approval_status === "auto_safe") proposalsAutoSafe += 1;
 
         if (sweepRequest.writeEvents && sweepRequest.autoApply && proposal.approval_status === "auto_safe") {
           const { error: updateError } = await supabase
