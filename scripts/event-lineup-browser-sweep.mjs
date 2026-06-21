@@ -46,6 +46,63 @@ const isGenericLineupProposal = (value) => {
   return !normalized || genericLineupPattern.test(normalized);
 };
 
+const textLines = (value) =>
+  String(value || "")
+    .split(/\r?\n/)
+    .map((line) => normalizeWhitespace(line))
+    .filter(Boolean);
+
+const stopLinePattern =
+  /^(how to|buy|book|tickets?|tables?|guestlist|read more|find out|share|follow|instagram|spotify|apple music|youtube|privacy|terms|contact|faq|about|calendar|vip|hotel|events?|what'?s on|sign up|keep browsing|back to events)\b/i;
+
+const labelledLineupPattern = /^(?:line\s*-?\s*up|lineup|artists?|djs?)$/i;
+
+const extractLineupFromVisibleText = (target, text) => {
+  const lines = textLines(text);
+  const candidates = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index].replace(/:$/, "");
+    if (!labelledLineupPattern.test(line)) continue;
+
+    const collected = [];
+    for (const nextLine of lines.slice(index + 1, index + 8)) {
+      if (stopLinePattern.test(nextLine)) break;
+      if (/^\d{1,2}[:.]\d{2}/.test(nextLine)) continue;
+      collected.push(nextLine);
+      if (collected.join(", ").length > 500) break;
+    }
+    if (collected.length) candidates.push(collected.join(", "));
+  }
+
+  const date = new Date(`${target.date}T12:00:00Z`);
+  if (!Number.isNaN(date.getTime())) {
+    const weekday = date.toLocaleDateString("en-GB", { timeZone: "UTC", weekday: "short" }).toUpperCase();
+    const day = date.toLocaleDateString("en-GB", { timeZone: "UTC", day: "2-digit" });
+    const month = date.toLocaleDateString("en-GB", { timeZone: "UTC", month: "short" }).toUpperCase();
+    const dateToken = `${weekday} ${day} ${month}`;
+
+    for (let index = 0; index < lines.length; index += 1) {
+      if (!lines[index].toUpperCase().includes(dateToken)) continue;
+      const sameLine = lines[index].split(":").slice(1).join(":");
+      if (sameLine) candidates.push(sameLine);
+      for (const nextLine of lines.slice(index + 1, index + 4)) {
+        if (stopLinePattern.test(nextLine)) break;
+        candidates.push(nextLine);
+        break;
+      }
+    }
+  }
+
+  return candidates
+    .map((candidate) => sanitizeLineup(candidate, ""))
+    .find((candidate) =>
+      candidate &&
+      candidate !== normalizeWhitespace(target.lineup_details || "") &&
+      overlapScore(candidate, target.event_name) < 0.75
+    ) || "";
+};
+
 const normalizeKeyPart = (value) =>
   normalizeWhitespace(value)
     .toLowerCase()
@@ -121,6 +178,32 @@ const chooseEvent = (target, events) =>
     .filter((entry) => entry.score >= 0.45)
     .sort((left, right) => right.score - left.score)[0]?.event ?? null;
 
+const extractProposedLineup = (target, html, visibleText) => {
+  const matched = chooseEvent(target, extractJsonLdEvents(html));
+  if (matched) {
+    const artists = getJsonNames(matched.performer);
+    const proposed = sanitizeLineup(artists.length ? artists.join(", ") : matched.description, "");
+    if (proposed) {
+      return {
+        proposed,
+        source_event_name: matched.name || null,
+        source_event_url: matched.url || null,
+        extraction_method: "json_ld",
+      };
+    }
+  }
+
+  const visibleProposal = extractLineupFromVisibleText(target, visibleText);
+  return visibleProposal
+    ? {
+      proposed: visibleProposal,
+      source_event_name: target.event_name,
+      source_event_url: target.source_url || target.event_url || null,
+      extraction_method: "visible_text_label",
+    }
+    : null;
+};
+
 const sha256 = async (value) => {
   const bytes = new TextEncoder().encode(value);
   const hash = await crypto.subtle.digest("SHA-256", bytes);
@@ -193,7 +276,15 @@ try {
     try {
       await page.goto(sourceUrl, { waitUntil: "networkidle", timeout: 45000 });
       const html = await page.content();
-      const snapshotHash = await sha256(html);
+      const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+      const frameTexts = [];
+      for (const frame of page.frames()) {
+        if (frame === page.mainFrame()) continue;
+        const frameText = await frame.locator("body").innerText({ timeout: 3000 }).catch(() => "");
+        if (frameText) frameTexts.push(frameText);
+      }
+      const renderedText = [bodyText, ...frameTexts].filter(Boolean).join("\n\n--- iframe ---\n\n");
+      const snapshotHash = await sha256(`${html}\n${renderedText}`);
       const { data: snapshot, error: snapshotError } = await supabase
         .from("event_source_snapshots")
         .insert({
@@ -203,12 +294,13 @@ try {
           source_url: sourceUrl,
           status_code: 200,
           content_hash: snapshotHash,
-          excerpt: stripHtml(html).slice(0, 12000),
+          excerpt: normalizeWhitespace(renderedText || stripHtml(html)).slice(0, 12000),
           raw_metadata: {
             event_id: target.event_id,
             event_name: target.event_name,
             source_type: target.source_type,
             renderer: "playwright",
+            frame_count: frameTexts.length,
           },
         })
         .select("id")
@@ -217,11 +309,10 @@ try {
       if (snapshotError) throw snapshotError;
       snapshotsInserted += 1;
 
-      const matched = chooseEvent(target, extractJsonLdEvents(html));
-      if (!matched) continue;
+      const extraction = extractProposedLineup(target, html, renderedText);
+      if (!extraction) continue;
 
-      const artists = getJsonNames(matched.performer);
-      const proposed = sanitizeLineup(artists.length ? artists.join(", ") : matched.description, "");
+      const { proposed } = extraction;
       if (!proposed || isWeakLineup(proposed) || proposed === normalizeWhitespace(target.lineup_details || "")) continue;
 
       const confidence = Math.min(0.95, 0.82 + (target.source_type === "official_venue" ? 0.08 : 0.03));
@@ -255,8 +346,9 @@ try {
           approval_status: approvalStatus,
           raw_metadata: {
             renderer: "playwright",
-            source_event_name: matched.name || null,
-            source_event_url: matched.url || null,
+            source_event_name: extraction.source_event_name,
+            source_event_url: extraction.source_event_url,
+            extraction_method: extraction.extraction_method,
             quality_gate: isGenericProposal ? "rejected_generic_or_partial_lineup" : "passed_generic_lineup_check",
           },
         }, { onConflict: "event_id,source_url,proposal_hash" });
