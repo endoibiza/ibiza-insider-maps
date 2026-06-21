@@ -139,6 +139,8 @@ const supabase = createClient(requiredEnv("SUPABASE_URL"), requiredEnv("SUPABASE
 const startDate = process.env.START_DATE || toDateOnly(today);
 const endDate = process.env.END_DATE || toDateOnly(addDays(today, Number(process.env.WINDOW_DAYS || 14)));
 const limit = Math.min(Math.max(Number(process.env.LIMIT || 40), 1), 200);
+const venuePattern = normalizeWhitespace(process.env.VENUE_PATTERN || "");
+const venueRegex = venuePattern ? new RegExp(venuePattern, "i") : null;
 
 const { data: run, error: runError } = await supabase
   .from("event_ingestion_runs")
@@ -149,7 +151,7 @@ const { data: run, error: runError } = await supabase
     source_keys: ["github-actions-browser-lineup-sweep"],
     window_start: startDate,
     window_end: endDate,
-    metadata: { job: "browser_lineup_sweep", limit },
+    metadata: { job: "browser_lineup_sweep", limit, venue_pattern: venuePattern || null },
   })
   .select("id")
   .single();
@@ -163,7 +165,7 @@ const proposalStatusCounts = {};
 const sourceFailures = [];
 
 try {
-  const { data: targets, error: targetError } = await supabase
+  const { data: rawTargets, error: targetError } = await supabase
     .from("event_lineup_sweep_targets")
     .select("*")
     .gte("date", startDate)
@@ -174,6 +176,11 @@ try {
     .limit(limit);
 
   if (targetError) throw targetError;
+  const targets = venueRegex
+    ? (rawTargets || []).filter((target) =>
+      venueRegex.test(target.venue || "") || venueRegex.test(target.event_name || ""),
+    )
+    : rawTargets || [];
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ userAgent: "Ibiza Maps Browser Lineup Sweep/1.0 (+https://ibiza-maps.com)" });
@@ -282,6 +289,7 @@ try {
         job: "browser_lineup_sweep",
         proposals_inserted: proposalsInserted,
         proposal_status_counts: proposalStatusCounts,
+        venue_pattern: venuePattern || null,
         events_inserted: 0,
         events_updated: 0,
       },
@@ -294,6 +302,7 @@ try {
     snapshots_inserted: snapshotsInserted,
     proposals_inserted: proposalsInserted,
     proposal_status_counts: proposalStatusCounts,
+    venue_pattern: venuePattern || null,
     source_failures: sourceFailures.length,
     events_inserted: 0,
     events_updated: 0,

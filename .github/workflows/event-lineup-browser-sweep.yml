@@ -14,11 +14,15 @@ on:
       window_days:
         description: Days ahead to scan
         required: false
-        default: "14"
+        default: "30"
       limit:
         description: Maximum events to inspect
         required: false
-        default: "40"
+        default: "100"
+      venue_pattern:
+        description: Optional case-insensitive venue filter, for targeted packets
+        required: false
+        default: ""
   schedule:
     - cron: "20 4 * * *"
 
@@ -33,6 +37,7 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       WINDOW_DAYS: ${{ inputs.window_days }}
       LIMIT: ${{ inputs.limit }}
+      VENUE_PATTERN: ${{ inputs.venue_pattern }}
       RUN_TYPE: manual
     steps:
       - name: Check out repository
@@ -54,7 +59,7 @@ jobs:
         run: node scripts/event-lineup-browser-sweep.mjs
 
   shadow-lineup-sweep-matrix:
-    if: github.event_name != 'workflow_dispatch'
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     name: shadow-lineup-sweep (${{ matrix.label }})
@@ -74,6 +79,36 @@ jobs:
       WINDOW_DAYS: ${{ matrix.window_days }}
       LIMIT: ${{ matrix.limit }}
       RUN_TYPE: ${{ github.event_name == 'schedule' && 'daily' || 'manual' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          npm install
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+
+      - name: Run shadow lineup sweep
+        run: node scripts/event-lineup-browser-sweep.mjs
+
+  shadow-lineup-sweep-scheduled:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    name: shadow-lineup-sweep (daily-next-30-days)
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      WINDOW_DAYS: "30"
+      LIMIT: "100"
+      RUN_TYPE: daily
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
