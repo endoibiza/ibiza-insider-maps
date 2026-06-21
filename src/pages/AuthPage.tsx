@@ -11,6 +11,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
 import { ArrowLeft, Mail, Lock, User } from 'lucide-react';
 import SEOHead from '@/components/SEOHead';
+import { ANALYTICS_EVENTS, getSafeErrorType, track } from '@/lib/analytics';
 
 const AuthPage = () => {
   const [email, setEmail] = useState('');
@@ -21,6 +22,9 @@ const AuthPage = () => {
   const { signIn, signUp, user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const getErrorMessage = (error: unknown) => (
+    error instanceof Error ? error.message : "Something went wrong. Please try again."
+  );
 
   useEffect(() => {
     if (user) {
@@ -32,12 +36,18 @@ const AuthPage = () => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    track(ANALYTICS_EVENTS.loginStarted, { source: "auth_page" });
 
     const { error } = await signIn(email, password);
     
     if (error) {
-      setError(error.message);
+      track(ANALYTICS_EVENTS.loginFailed, {
+        source: "auth_page",
+        error_type: getSafeErrorType(error),
+      });
+      setError(getErrorMessage(error));
     } else {
+      track(ANALYTICS_EVENTS.loginCompleted, { source: "auth_page" });
       toast({
         title: "Welcome back!",
         description: "You've successfully signed in.",
@@ -52,12 +62,26 @@ const AuthPage = () => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    const hasPromoCode = Boolean(promoCode);
+    track(ANALYTICS_EVENTS.signupStarted, {
+      source: "auth_page",
+      has_promo_code: hasPromoCode,
+    });
 
     const { error } = await signUp(email, password, promoCode || undefined);
     
     if (error) {
-      setError(error.message);
+      track(ANALYTICS_EVENTS.signupFailed, {
+        source: "auth_page",
+        has_promo_code: hasPromoCode,
+        error_type: getSafeErrorType(error),
+      });
+      setError(getErrorMessage(error));
     } else {
+      track(ANALYTICS_EVENTS.signupCompleted, {
+        source: "auth_page",
+        has_promo_code: hasPromoCode,
+      });
       if (promoCode) {
         toast({
           title: "Welcome to Premium!",

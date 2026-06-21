@@ -1,11 +1,11 @@
 {
-  "name": "Ibiza Insider - Premium Travel Guide",
-  "short_name": "Ibiza Insider",
-  "description": "Discover 1000+ hand-curated locations across Ibiza & Formentera. Premium travel guide with beaches, clubs, restaurants, and insider secrets.",
+  "name": "Ibiza Maps - Insider Map for Ibiza",
+  "short_name": "Ibiza Maps",
+  "description": "The definitive insider map for Ibiza with 87+ curated Google Maps and 1,500+ island places.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#E94E87",
+  "background_color": "#F9FAFB",
+  "theme_color": "#0A6FB8",
   "orientation": "portrait-primary",
   "icons": [
     {

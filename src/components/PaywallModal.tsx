@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/components/AuthProvider';
@@ -8,12 +8,10 @@ import { useToast } from '@/hooks/use-toast';
 import PayPalButton from '@/components/PayPalButton';
 import { 
   Crown, 
-  MapPin, 
-  Star, 
   Check, 
-  X,
   Sparkles
 } from 'lucide-react';
+import { ANALYTICS_EVENTS, getSafeErrorType, track } from '@/lib/analytics';
 
 interface PaywallModalProps {
   isOpen: boolean;
@@ -30,14 +28,33 @@ const PaywallModal: React.FC<PaywallModalProps> = ({
   const { toast } = useToast();
   const navigate = useNavigate();
   const [isProcessing, setIsProcessing] = useState(false);
+  const wasOpen = useRef(false);
+
+  useEffect(() => {
+    if (isOpen && !wasOpen.current) {
+      track(ANALYTICS_EVENTS.paywallViewed, {
+        source: "paywall_modal",
+        feature_name: featureName,
+      });
+    }
+
+    wasOpen.current = isOpen;
+  }, [featureName, isOpen]);
 
   const handlePaymentSuccess = async (paymentId: string) => {
     setIsProcessing(true);
     try {
       await grantPremiumAccess(paymentId);
+      track(ANALYTICS_EVENTS.paymentCompleted, {
+        source: "paywall_modal",
+        feature_name: featureName,
+        amount: 29.99,
+        currency: "EUR",
+        payment_method: "paypal",
+      });
       toast({
-        title: "Welcome to Ibiza Insider Premium! 🎉",
-        description: "You now have lifetime access to all premium content.",
+        title: "Welcome to Ibiza Maps",
+        description: "You now have lifetime access to the full Ibiza Maps collection.",
       });
       onClose();
     } catch (error) {
@@ -46,12 +63,28 @@ const PaywallModal: React.FC<PaywallModalProps> = ({
         description: "Please contact support if access isn't granted shortly.",
         variant: "destructive"
       });
+      track(ANALYTICS_EVENTS.paymentFailed, {
+        source: "paywall_modal",
+        feature_name: featureName,
+        payment_method: "paypal",
+        error_type: getSafeErrorType(error),
+      });
     } finally {
       setIsProcessing(false);
     }
   };
 
   const handlePaymentError = (error: string) => {
+    const eventName = error.toLowerCase().includes("cancel")
+      ? ANALYTICS_EVENTS.paymentCancelled
+      : ANALYTICS_EVENTS.paymentFailed;
+
+    track(eventName, {
+      source: "paywall_modal",
+      feature_name: featureName,
+      payment_method: "paypal",
+      error_type: eventName === ANALYTICS_EVENTS.paymentCancelled ? "payment_cancelled" : "payment_error",
+    });
     toast({
       title: "Payment failed",
       description: error,
@@ -60,17 +93,11 @@ const PaywallModal: React.FC<PaywallModalProps> = ({
   };
 
   const features = [
-    "Access to 80+ curated Ibiza locations",
-    "Interactive maps with all venues",
-    "Detailed category browsing",
-    "Mobile-optimized experience",
-    "Lifetime access - pay once, use forever",
-    "Regular updates with new locations"
-  ];
-
-  const freeFeatures = [
-    "Limited preview of locations",
-    "Basic category overview"
+    "87+ curated Google Maps",
+    "1,500+ Ibiza places across beaches, food, clubs, hotels, shopping, and local finds",
+    "Works in Google Maps - no new app to learn",
+    "Useful before you land and while you are here",
+    "Lifetime access - pay once, use every trip"
   ];
 
   return (
@@ -81,11 +108,11 @@ const PaywallModal: React.FC<PaywallModalProps> = ({
             <Crown className="w-8 h-8 text-primary-foreground" />
           </div>
           <DialogTitle className="text-2xl font-bold">
-            Unlock Ibiza Insider Premium
+            Get the Full Ibiza Maps Collection
           </DialogTitle>
-          <p className="text-muted-foreground">
-            Get lifetime access to our complete Ibiza guide
-          </p>
+          <DialogDescription>
+            87+ curated Google Maps and 1,500+ Ibiza places, organized so you know where to go.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6">
@@ -101,7 +128,6 @@ const PaywallModal: React.FC<PaywallModalProps> = ({
             <div className="text-sm text-muted-foreground">Lifetime access</div>
           </div>
 
-          {/* Features */}
           <div className="space-y-4">
             <h4 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
               What's included:
@@ -116,28 +142,20 @@ const PaywallModal: React.FC<PaywallModalProps> = ({
             </div>
           </div>
 
-          {/* Free vs Premium comparison */}
-          <div className="border-t pt-4">
-            <div className="grid grid-cols-2 gap-4 text-xs">
-              <div>
-                <h5 className="font-medium mb-2 text-muted-foreground">Free Access</h5>
-                {freeFeatures.map((feature, index) => (
-                  <div key={index} className="flex items-start gap-2 mb-1">
-                    <X className="w-3 h-3 text-red-400 mt-0.5" />
-                    <span className="text-muted-foreground">{feature}</span>
-                  </div>
-                ))}
+          <div className="rounded-lg border bg-muted/40 p-4">
+            <h4 className="font-semibold text-sm mb-3">How access works</h4>
+            <div className="grid gap-2 text-sm text-muted-foreground">
+              <div className="flex items-start gap-2">
+                <Check className="w-4 h-4 text-green-500 mt-0.5" />
+                <span>Pay once - €29.99.</span>
               </div>
-              <div>
-                <h5 className="font-medium mb-2 text-primary">Premium Access</h5>
-                <div className="flex items-start gap-2 mb-1">
-                  <Check className="w-3 h-3 text-green-500 mt-0.5" />
-                  <span>Complete access</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <Star className="w-3 h-3 text-yellow-500 mt-0.5" />
-                  <span>Lifetime updates</span>
-                </div>
+              <div className="flex items-start gap-2">
+                <Check className="w-4 h-4 text-green-500 mt-0.5" />
+                <span>Verify your email.</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <Check className="w-4 h-4 text-green-500 mt-0.5" />
+                <span>Open the maps in Google Maps.</span>
               </div>
             </div>
           </div>
@@ -152,9 +170,17 @@ const PaywallModal: React.FC<PaywallModalProps> = ({
             ) : (
               <div className="text-center p-4 bg-muted/50 rounded-lg">
                 <p className="text-sm text-muted-foreground mb-3">
-                  Please sign in to purchase premium access
+                  Sign in to connect lifetime access to your email.
                 </p>
-                <Button onClick={() => { onClose(); navigate('/auth'); }} variant="outline">
+                <Button onClick={() => {
+                  track(ANALYTICS_EVENTS.paywallCtaClicked, {
+                    source: "paywall_modal",
+                    location: "sign_in_first",
+                    feature_name: featureName,
+                  });
+                  onClose();
+                  navigate('/auth');
+                }} variant="outline">
                   Sign In First
                 </Button>
               </div>
@@ -171,8 +197,8 @@ const PaywallModal: React.FC<PaywallModalProps> = ({
 
           {/* Trust indicators */}
           <div className="text-center text-xs text-muted-foreground border-t pt-4">
-            <p>🔒 Secure payment • 30-day money-back guarantee</p>
-            <p className="mt-1">PayPal Buyer Protection included</p>
+            <p>No subscription. No new app to learn.</p>
+            <p className="mt-1">Secure payment through PayPal.</p>
           </div>
         </div>
       </DialogContent>

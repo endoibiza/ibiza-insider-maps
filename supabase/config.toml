@@ -14,3 +14,18 @@ verify_jwt = false
 
 [functions.validate-promo-code]
 verify_jwt = false
+
+[functions.sync-fourvenues-auth]
+verify_jwt = false
+
+[functions.sync-fourvenues-events]
+verify_jwt = false
+
+[functions.sync-ibiza-events-agent]
+verify_jwt = false
+
+[functions.sweep-event-lineups]
+verify_jwt = false
+
+[functions.backfill-notion-events]
+verify_jwt = false

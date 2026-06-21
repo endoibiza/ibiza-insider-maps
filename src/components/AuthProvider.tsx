@@ -1,14 +1,17 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { ANALYTICS_EVENTS, getSafeErrorType, track } from '@/lib/analytics';
+
+type AuthActionResult = Promise<{ error: unknown }>;
 
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   hasPremiumAccess: boolean;
   loading: boolean;
-  signUp: (email: string, password: string, promoCode?: string) => Promise<{ error: any }>;
-  signIn: (email: string, password: string) => Promise<{ error: any }>;
+  signUp: (email: string, password: string, promoCode?: string) => AuthActionResult;
+  signIn: (email: string, password: string) => AuthActionResult;
   signOut: () => Promise<void>;
   grantPremiumAccess: (paymentId: string) => Promise<void>;
 }
@@ -61,11 +64,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const checkPremiumAccess = async (userId: string) => {
-    // Development mode - always grant premium access
-    setHasPremiumAccess(true);
-    return;
-    
-    /* Production code:
+    if (import.meta.env.DEV && import.meta.env.VITE_FORCE_PREMIUM_ACCESS !== "false") {
+      setHasPremiumAccess(true);
+      return;
+    }
+
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -78,8 +81,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (error) {
       console.error('Error checking premium access:', error);
+      track(ANALYTICS_EVENTS.loginFailed, {
+        source: "premium_access_check",
+        error_type: getSafeErrorType(error),
+      });
     }
-    */
   };
 
   const signUp = async (email: string, password: string, promoCode?: string) => {
@@ -119,6 +125,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               }
             } catch (err) {
               console.error('Error applying promo code:', err);
+              track(ANALYTICS_EVENTS.signupFailed, {
+                source: "promo_code_validation",
+                has_promo_code: true,
+                error_type: getSafeErrorType(err),
+              });
             }
           }
 
@@ -176,8 +187,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .eq('user_id', user.id);
 
       setHasPremiumAccess(true);
+      track(ANALYTICS_EVENTS.premiumAccessGranted, {
+        source: "payment",
+        amount: 29.99,
+        currency: "EUR",
+        payment_method: "paypal",
+      });
     } catch (error) {
       console.error('Error granting premium access:', error);
+      track(ANALYTICS_EVENTS.paymentFailed, {
+        source: "premium_access_grant",
+        payment_method: "paypal",
+        error_type: getSafeErrorType(error),
+      });
       throw error;
     }
   };

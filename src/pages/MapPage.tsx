@@ -16,6 +16,7 @@ import { parseMapData, getCategories, type MapLocation } from "@/data/maps-data"
 import { useAuth } from "@/components/AuthProvider";
 import PaywallModal from "@/components/PaywallModal";
 import SEOHead from "@/components/SEOHead";
+import { ANALYTICS_EVENTS, track, trackOnce } from "@/lib/analytics";
 
 const MapPage = () => {
   const [searchTerm, setSearchTerm] = useState("");
@@ -47,9 +48,25 @@ const MapPage = () => {
   const handleLocationClick = (e: React.MouseEvent, url: string) => {
     if (!hasPremiumAccess) {
       e.preventDefault();
+      track(ANALYTICS_EVENTS.mapPreviewClicked, {
+        source: "map_page",
+        feature_name: "map locations",
+        view_mode: viewMode,
+      });
+      track(ANALYTICS_EVENTS.paywallCtaClicked, {
+        source: "map_page",
+        location: "locked_location",
+        feature_name: "map locations",
+      });
       setShowPaywall(true);
       return;
     }
+
+    track(ANALYTICS_EVENTS.mapOpened, {
+      source: "map_page",
+      location: "location_card",
+      view_mode: viewMode,
+    });
   };
 
   return (
@@ -78,7 +95,15 @@ const MapPage = () => {
               <Input
                 placeholder="Search locations..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  if (e.target.value.trim().length >= 2) {
+                    trackOnce("map_page_search_performed", ANALYTICS_EVENTS.searchPerformed, {
+                      source: "map_page",
+                      result_count: filteredLocations.length,
+                    });
+                  }
+                }}
                 className="pl-10"
               />
             </div>
@@ -109,7 +134,18 @@ const MapPage = () => {
             <span className="text-sm font-medium">Filter by category:</span>
           </div>
           
-          <Tabs value={selectedCategory} onValueChange={setSelectedCategory} className="w-full">
+          <Tabs
+            value={selectedCategory}
+            onValueChange={(category) => {
+              setSelectedCategory(category);
+              track(ANALYTICS_EVENTS.categoryFilterApplied, {
+                source: "map_page",
+                category,
+                result_count: filteredLocations.length,
+              });
+            }}
+            className="w-full"
+          >
             <TabsList className="grid w-full grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-1 h-auto p-1">
               {categories.slice(0, 12).map((category) => (
                 <TabsTrigger
@@ -130,7 +166,14 @@ const MapPage = () => {
                   key={category}
                   variant={selectedCategory === category ? "default" : "outline"}
                   size="sm"
-                  onClick={() => setSelectedCategory(category)}
+                  onClick={() => {
+                    setSelectedCategory(category);
+                    track(ANALYTICS_EVENTS.categoryFilterApplied, {
+                      source: "map_page",
+                      category,
+                      result_count: filteredLocations.length,
+                    });
+                  }}
                   className="text-xs"
                 >
                   {category}

@@ -14,6 +14,213 @@ export type Database = {
   }
   public: {
     Tables: {
+      fourvenues_event_snapshots: {
+        Row: {
+          fetched_at: string
+          fourvenues_event_id: string
+          id: string
+          organization_id: string | null
+          payload: Json
+          payload_hash: string | null
+        }
+        Insert: {
+          fetched_at?: string
+          fourvenues_event_id: string
+          id?: string
+          organization_id?: string | null
+          payload: Json
+          payload_hash?: string | null
+        }
+        Update: {
+          fetched_at?: string
+          fourvenues_event_id?: string
+          id?: string
+          organization_id?: string | null
+          payload?: Json
+          payload_hash?: string | null
+        }
+        Relationships: []
+      }
+      fourvenues_organizations: {
+        Row: {
+          created_at: string
+          currency: string | null
+          fourvenues_id: string
+          id: string
+          last_synced_at: string
+          locale: string | null
+          name: string
+          organization_type: string
+          raw_metadata: Json
+          slug: string | null
+          timezone: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          currency?: string | null
+          fourvenues_id: string
+          id?: string
+          last_synced_at?: string
+          locale?: string | null
+          name: string
+          organization_type?: string
+          raw_metadata?: Json
+          slug?: string | null
+          timezone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          currency?: string | null
+          fourvenues_id?: string
+          id?: string
+          last_synced_at?: string
+          locale?: string | null
+          name?: string
+          organization_type?: string
+          raw_metadata?: Json
+          slug?: string | null
+          timezone?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      ibiza_events: {
+        Row: {
+          checkout_url: string | null
+          created_at: string
+          date: string | null
+          display_date: string | null
+          end_date: string | null
+          end_time: string | null
+          event_groups: Json
+          event_name: string
+          event_series: string | null
+          event_url: string | null
+          featured_on_party_calendar: boolean
+          fourvenues_currency: string | null
+          fourvenues_event_id: string | null
+          fourvenues_organization_id: string | null
+          fourvenues_slug: string | null
+          id: string
+          iframe_script_url: string | null
+          iframe_tag_url: string | null
+          image_url: string | null
+          last_synced_at: string | null
+          lineup_details: string | null
+          list_rates: Json
+          location_address: string | null
+          location_city: string | null
+          location_country: string | null
+          location_latitude: number | null
+          location_longitude: number | null
+          location_name: string | null
+          mikes_pick: boolean
+          notion_page_id: string
+          notes: string | null
+          preregister: Json | null
+          raw_fourvenues_payload: Json | null
+          residents_pass: string | null
+          slug: string | null
+          source: string | null
+          source_missing_since: string | null
+          start_time: string | null
+          status: string | null
+          ticket_rates: Json
+          type: string | null
+          venue: string | null
+        }
+        Insert: {
+          checkout_url?: string | null
+          created_at?: string
+          date?: string | null
+          display_date?: string | null
+          end_date?: string | null
+          end_time?: string | null
+          event_groups?: Json
+          event_name: string
+          event_series?: string | null
+          event_url?: string | null
+          featured_on_party_calendar?: boolean
+          fourvenues_currency?: string | null
+          fourvenues_event_id?: string | null
+          fourvenues_organization_id?: string | null
+          fourvenues_slug?: string | null
+          id?: string
+          iframe_script_url?: string | null
+          iframe_tag_url?: string | null
+          image_url?: string | null
+          last_synced_at?: string | null
+          lineup_details?: string | null
+          list_rates?: Json
+          location_address?: string | null
+          location_city?: string | null
+          location_country?: string | null
+          location_latitude?: number | null
+          location_longitude?: number | null
+          location_name?: string | null
+          mikes_pick?: boolean
+          notion_page_id: string
+          notes?: string | null
+          preregister?: Json | null
+          raw_fourvenues_payload?: Json | null
+          residents_pass?: string | null
+          slug?: string | null
+          source?: string | null
+          source_missing_since?: string | null
+          start_time?: string | null
+          status?: string | null
+          ticket_rates?: Json
+          type?: string | null
+          venue?: string | null
+        }
+        Update: {
+          checkout_url?: string | null
+          created_at?: string
+          date?: string | null
+          display_date?: string | null
+          end_date?: string | null
+          end_time?: string | null
+          event_groups?: Json
+          event_name?: string
+          event_series?: string | null
+          event_url?: string | null
+          featured_on_party_calendar?: boolean
+          fourvenues_currency?: string | null
+          fourvenues_event_id?: string | null
+          fourvenues_organization_id?: string | null
+          fourvenues_slug?: string | null
+          id?: string
+          iframe_script_url?: string | null
+          iframe_tag_url?: string | null
+          image_url?: string | null
+          last_synced_at?: string | null
+          lineup_details?: string | null
+          list_rates?: Json
+          location_address?: string | null
+          location_city?: string | null
+          location_country?: string | null
+          location_latitude?: number | null
+          location_longitude?: number | null
+          location_name?: string | null
+          mikes_pick?: boolean
+          notion_page_id?: string
+          notes?: string | null
+          preregister?: Json | null
+          raw_fourvenues_payload?: Json | null
+          residents_pass?: string | null
+          slug?: string | null
+          source?: string | null
+          source_missing_since?: string | null
+          start_time?: string | null
+          status?: string | null
+          ticket_rates?: Json
+          type?: string | null
+          venue?: string | null
+        }
+        Relationships: []
+      }
       payments: {
         Row: {
           amount: number
@@ -107,14 +314,81 @@ export type Database = {
         }
         Relationships: []
       }
+      sync_log: {
+        Row: {
+          completed_at: string | null
+          error_message: string | null
+          id: string
+          metadata: Json
+          records_seen: number
+          records_soft_missing: number
+          records_upserted: number
+          source: string
+          started_at: string
+          status: string
+          sync_name: string
+        }
+        Insert: {
+          completed_at?: string | null
+          error_message?: string | null
+          id?: string
+          metadata?: Json
+          records_seen?: number
+          records_soft_missing?: number
+          records_upserted?: number
+          source: string
+          started_at?: string
+          status: string
+          sync_name: string
+        }
+        Update: {
+          completed_at?: string | null
+          error_message?: string | null
+          id?: string
+          metadata?: Json
+          records_seen?: number
+          records_soft_missing?: number
+          records_upserted?: number
+          source?: string
+          started_at?: string
+          status?: string
+          sync_name?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      get_latest_sync: {
+        Args: { target_sync_name?: string }
+        Returns: {
+          completed_at: string | null
+          error_message: string | null
+          id: string
+          metadata: Json
+          records_seen: number
+          records_soft_missing: number
+          records_upserted: number
+          source: string
+          started_at: string
+          status: string
+          sync_name: string
+        }[]
+      }
       increment_promo_use: {
         Args: { promo_code: string }
         Returns: boolean
+      }
+      mark_missing_fourvenues_events: {
+        Args: {
+          seen_external_ids: string[]
+          target_organization_id?: string | null
+          window_end: string
+          window_start: string
+        }
+        Returns: number
       }
     }
     Enums: {
