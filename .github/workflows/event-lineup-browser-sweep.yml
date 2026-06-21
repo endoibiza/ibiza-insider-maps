@@ -23,15 +23,57 @@ on:
     - cron: "20 4 * * *"
 
 jobs:
-  shadow-lineup-sweep:
+  shadow-lineup-sweep-manual:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    name: shadow-lineup-sweep (manual)
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      WINDOW_DAYS: ${{ inputs.window_days || '14' }}
-      LIMIT: ${{ inputs.limit || '40' }}
-      RUN_TYPE: daily
+      WINDOW_DAYS: ${{ inputs.window_days }}
+      LIMIT: ${{ inputs.limit }}
+      RUN_TYPE: manual
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          npm install
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+
+      - name: Run shadow lineup sweep
+        run: node scripts/event-lineup-browser-sweep.mjs
+
+  shadow-lineup-sweep-matrix:
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    name: shadow-lineup-sweep (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: next-30-days
+            window_days: "30"
+            limit: "100"
+          - label: full-season
+            window_days: "180"
+            limit: "200"
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      WINDOW_DAYS: ${{ matrix.window_days }}
+      LIMIT: ${{ matrix.limit }}
+      RUN_TYPE: ${{ github.event_name == 'schedule' && 'daily' || 'manual' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
