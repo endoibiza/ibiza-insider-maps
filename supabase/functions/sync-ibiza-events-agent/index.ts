@@ -151,6 +151,18 @@ const upsertEventSourceLink = async (
   if (error) throw error;
 };
 
+const sourceErrorMessage = (error: unknown) => {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error && typeof (error as { message?: unknown }).message === "string") {
+    return (error as { message: string }).message;
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return "Unknown source failure";
+  }
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -285,10 +297,12 @@ serve(async (req) => {
             candidateId = staged.id;
             candidatesInserted += 1;
 
-            await upsertEventSourceLink(
-              supabase,
-              buildEventSourceLink(candidate, existingEvent?.id ?? null, candidateId, snapshotId),
-            );
+            if (!(existingEvent?.event_url && existingEvent.event_url === candidate.canonical_source_url)) {
+              await upsertEventSourceLink(
+                supabase,
+                buildEventSourceLink(candidate, existingEvent?.id ?? null, candidateId, snapshotId),
+              );
+            }
           }
 
           if (!syncRequest.writeEvents || syncRequest.dryRun) continue;
@@ -331,7 +345,7 @@ serve(async (req) => {
           }
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown source failure";
+        const message = sourceErrorMessage(error);
         sourceFailures.push({ source_key: source.key, url: source.url, error: message });
         console.error(`Event source failed: ${source.key}`, error);
       }
