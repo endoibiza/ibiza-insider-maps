@@ -339,7 +339,9 @@ try {
     targetsSeen += 1;
 
     try {
-      await page.goto(sourceUrl, { waitUntil: "networkidle", timeout: 45000 });
+      await page.goto(sourceUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(1000);
       const html = await page.content();
       const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
       const frameTexts = [];
