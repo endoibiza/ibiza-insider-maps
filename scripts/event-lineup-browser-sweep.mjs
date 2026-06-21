@@ -159,6 +159,7 @@ if (runError) throw runError;
 let targetsSeen = 0;
 let snapshotsInserted = 0;
 let proposalsInserted = 0;
+const proposalStatusCounts = {};
 const sourceFailures = [];
 
 try {
@@ -255,6 +256,7 @@ try {
 
       if (proposalError) throw proposalError;
       proposalsInserted += 1;
+      proposalStatusCounts[approvalStatus] = (proposalStatusCounts[approvalStatus] || 0) + 1;
     } catch (error) {
       sourceFailures.push({
         event_id: target.event_id,
@@ -276,11 +278,26 @@ try {
       candidates_seen: proposalsInserted,
       candidates_inserted: proposalsInserted,
       source_failures: sourceFailures,
-      metadata: { job: "browser_lineup_sweep", proposals_inserted: proposalsInserted },
+      metadata: {
+        job: "browser_lineup_sweep",
+        proposals_inserted: proposalsInserted,
+        proposal_status_counts: proposalStatusCounts,
+        events_inserted: 0,
+        events_updated: 0,
+      },
     })
     .eq("id", run.id);
 
-  console.log(JSON.stringify({ run_id: run.id, targets_seen: targetsSeen, snapshots_inserted: snapshotsInserted, proposals_inserted: proposalsInserted, source_failures: sourceFailures.length }, null, 2));
+  console.log(JSON.stringify({
+    run_id: run.id,
+    targets_seen: targetsSeen,
+    snapshots_inserted: snapshotsInserted,
+    proposals_inserted: proposalsInserted,
+    proposal_status_counts: proposalStatusCounts,
+    source_failures: sourceFailures.length,
+    events_inserted: 0,
+    events_updated: 0,
+  }, null, 2));
 } catch (error) {
   await supabase
     .from("event_ingestion_runs")
