@@ -215,6 +215,15 @@ const getJsonUrl = (value: unknown): string | null => {
   return null;
 };
 
+const absoluteUrl = (url: string | null, source: EventSource) => {
+  if (!url) return source.url;
+  try {
+    return new URL(url, source.url).toString();
+  } catch {
+    return source.url;
+  }
+};
+
 const getJsonLdObjects = (value: unknown): Record<string, unknown>[] => {
   if (!value) return [];
   if (Array.isArray(value)) return value.flatMap(getJsonLdObjects);
@@ -263,7 +272,7 @@ export const extractJsonLdCandidates = (
         const venue = getJsonName(location ?? event.location) || source.defaultVenue || null;
         const description = getJsonText(event.description);
         const performers = getJsonNames(event.performer);
-        const eventUrl = getJsonUrl(event.url) || source.url;
+        const eventUrl = absoluteUrl(getJsonUrl(event.url), source);
         const lineupDetails = sanitizeLineupDetails(performers.length ? performers.join(", ") : description, `${name}${venue ? ` at ${venue}` : ""}`);
         const rawCandidate = { ...event, source_url: source.url };
         const externalSeed = `${eventUrl}|${name}|${eventDate ?? ""}|${venue ?? ""}`;
@@ -367,7 +376,7 @@ const extractPachaInitialEventsCandidates = (
     const location = event.location && typeof event.location === "object" ? (event.location as Record<string, unknown>) : null;
     const venue = getJsonName(location) || source.defaultVenue || null;
     const artists = getJsonNames(event.artists);
-    const eventUrl = typeof event.slug === "string" ? `https://pacha.com/events/${event.slug}` : source.url;
+    const eventUrl = typeof event.slug === "string" ? `https://pacha.com/event/${event.slug}` : source.url;
     const lineupDetails = sanitizeLineupDetails(artists.length ? artists.join(", ") : getJsonText(event.description), `${name}${venue ? ` at ${venue}` : ""}`);
     const externalId = getJsonText(event.event_id) || stableHash(`${eventUrl}|${name}|${eventDate ?? ""}`);
 
@@ -423,7 +432,9 @@ export const findExistingEventMatch = (candidate: NormalizedCandidate, existingE
         normalizeKeyPart(event.event_series) === normalizeKeyPart(candidate.event_series);
       if (sameVenue && sameSeries) return true;
       if (normalizeKeyPart(event.event_name) === normalizeKeyPart(candidate.event_name)) return true;
-      return overlapScore(event.event_name, candidate.event_name) >= 0.65;
+      const titleOverlap = overlapScore(event.event_name, candidate.event_name);
+      if (sameVenue && titleOverlap >= 0.3) return true;
+      return titleOverlap >= 0.65;
     }) ?? null
   );
 };

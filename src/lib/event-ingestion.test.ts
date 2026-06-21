@@ -85,8 +85,20 @@ describe("event ingestion helpers", () => {
     expect(candidate.event_date).toBe("2026-06-21");
     expect(candidate.venue).toBe("Pacha Ibiza");
     expect(candidate.lineup_details).toBe("Solomun, Idris Elba");
-    expect(candidate.event_url).toBe("https://pacha.com/events/solomun1-21-06-2026");
+    expect(candidate.event_url).toBe("https://pacha.com/event/solomun1-21-06-2026");
     expect(candidate.residents_pass).toBe("Pacha Group Pass");
+  });
+
+  it("normalizes relative source URLs to absolute URLs", () => {
+    const html = `
+      <script type="application/ld+json">
+        {"@type":"Event","name":"Beach yoga","startDate":"2026-06-21","url":"/event/beach-yoga"}
+      </script>
+    `;
+
+    const [candidate] = extractJsonLdCandidates(html, source, "2026-06-21", "2026-06-22");
+
+    expect(candidate.event_url).toBe("https://www.ibiza-spotlight.com/event/beach-yoga");
   });
 
   it("keeps public lineup details free of room labels and verification metadata", () => {
@@ -122,6 +134,27 @@ describe("event ingestion helpers", () => {
     ]);
 
     expect(match?.id).toBe("existing-id");
+  });
+
+  it("matches official venue titles to existing editorial names at the same venue", () => {
+    const pachaSource = DEFAULT_EVENT_SOURCES.find((item) => item.key === "pacha-events")!;
+    const html = `
+      <script>self.__next_f.push([1,"\\"initialEvents\\":[{\\"event_id\\":\\"evt_1\\",\\"name\\":\\"SOLOMUN+1\\",\\"slug\\":\\"solomun1-21-06-2026\\",\\"artists\\":[{\\"name\\":\\"Solomun\\"}],\\"start_date\\":\\"2026-06-21T23:00:00+02:00\\",\\"location\\":{\\"name\\":\\"Pacha Ibiza\\"}}],\\"residenciesMap\\":{}"])</script>
+    `;
+    const [candidate] = extractJsonLdCandidates(html, pachaSource, "2026-06-21", "2026-06-22");
+
+    const match = findExistingEventMatch(candidate, [
+      {
+        id: "existing-pacha",
+        notion_page_id: "notion-page-id",
+        event_name: "Solomun +1 at Pacha Ibiza",
+        date: "2026-06-21",
+        venue: "Pacha Ibiza",
+        event_series: null,
+      },
+    ]);
+
+    expect(match?.id).toBe("existing-pacha");
   });
 
   it("builds stable agent ids and does not include protected editorial fields in inserts", () => {

@@ -297,6 +297,7 @@ serve(async (req) => {
 
       await supabase.from("sync_log").insert({
         table_name: "event_candidates",
+        last_synced_at: new Date().toISOString(),
         records_upserted: candidatesInserted,
       });
     }
