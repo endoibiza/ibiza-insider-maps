@@ -107,16 +107,22 @@ const DEFAULT_EVENT_SOURCES: EventSource[] = [
 
 const normalizeWhitespace = (value: string) => value.replace(/\s+/g, " ").trim();
 
+const decodeHtmlEntities = (value: string) =>
+  value
+    .replace(/&#(\d+);/g, (_match, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_match, code) => String.fromCharCode(parseInt(code, 16)))
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'");
+
 const stripHtml = (value: string) =>
   normalizeWhitespace(
-    value
+    decodeHtmlEntities(value)
       .replace(/<script[\s\S]*?<\/script>/gi, " ")
       .replace(/<style[\s\S]*?<\/style>/gi, " ")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/&nbsp;/g, " ")
-      .replace(/&amp;/g, "&")
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'"),
+      .replace(/<[^>]+>/g, " "),
   );
 
 const truncate = (value: string, length: number) => (value.length > length ? `${value.slice(0, length).trim()}...` : value);
@@ -431,10 +437,10 @@ const buildSourceForTarget = (target: SweepTarget, sourceUrl: string): EventSour
   };
 };
 
-const weakLineupPattern = /^(tba|tbc|lineup tba|to be announced|more tba|coming soon)$/i;
+const weakLineupPattern = /^(tba|tbc|line\s*up\s*tba|to be announced|more tba|coming soon|line\s*up\s*coming soon)\.?$/i;
 const internalNoisePattern = /\b(agent run|run id|verified on|last verified)\b/i;
 const genericLineupPattern =
-  /(?:\b(?:resident\s+djs?|special\s+guests?|guest\s+djs?|lineup\s+coming\s+soon|more\s+(?:artists|names|acts|djs)?\s*(?:tba|soon)?|and\s+more)\b|&\s*more|&#038;\s*more)/i;
+  /(?:\b(?:resident\s+djs?|special\s+guests?|guest\s+djs?|line\s*up\s+coming\s+soon|coming\s+soon|more\s+(?:artists|names|acts|djs)?\s*(?:tba|soon)?|and\s+more)\b|&\s*more)/i;
 
 export const isWeakLineupDetails = (value: string | null | undefined) => {
   const normalized = normalizeWhitespace(value || "");
@@ -488,6 +494,7 @@ const approvalStatusForProposal = (
   currentLineup: string | null | undefined,
   proposedLineup: string,
 ) => {
+  if (isGenericLineupProposal(proposedLineup)) return "pending";
   if (
     isWeakLineupDetails(currentLineup) &&
     !isGenericLineupProposal(proposedLineup) &&
