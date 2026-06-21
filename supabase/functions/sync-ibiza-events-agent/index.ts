@@ -78,14 +78,21 @@ const sha256 = async (value: string) => {
 };
 
 const fetchSource = async (source: EventSource) => {
-  const response = await fetch(source.url, {
-    headers: {
-      "User-Agent": "Ibiza Maps Events Agent/1.0 (+https://ibiza-maps.com)",
-      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    },
-  });
-  const text = await response.text();
-  return { response, text };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  try {
+    const response = await fetch(source.url, {
+      headers: {
+        "User-Agent": "Ibiza Maps Events Agent/1.0 (+https://ibiza-maps.com)",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    return { response, text };
+  } finally {
+    clearTimeout(timeout);
+  }
 };
 
 const selectExistingEventsForDate = async (supabase: ReturnType<typeof createClient>, date: string | null) => {

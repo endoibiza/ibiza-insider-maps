@@ -7,6 +7,7 @@ export type EventSource = {
   url: string;
   sourceLabel: string;
   defaultType: string;
+  defaultVenue?: string;
 };
 
 export type NormalizedCandidate = {
@@ -82,7 +83,7 @@ export const DEFAULT_EVENT_SOURCES: EventSource[] = [
     key: "sant-antoni-agenda",
     label: "Sant Antoni Agenda",
     kind: "municipal",
-    url: "https://www.santantoni.net/en/agenda/",
+    url: "https://visit.santantoni.net/en/events/",
     sourceLabel: "Club Website",
     defaultType: "Local",
   },
@@ -90,25 +91,28 @@ export const DEFAULT_EVENT_SOURCES: EventSource[] = [
     key: "pacha-events",
     label: "Pacha Events",
     kind: "venue",
-    url: "https://www.pacha.com/events",
+    url: "https://pacha.com/events",
     sourceLabel: "Club Website",
     defaultType: "Club",
+    defaultVenue: "Pacha Ibiza",
   },
   {
     key: "hi-ibiza-events",
     label: "Hi Ibiza Events",
     kind: "venue",
-    url: "https://www.hiibiza.com/events",
+    url: "https://www.hiibiza.com/events-calendar",
     sourceLabel: "Club Website",
     defaultType: "Club",
+    defaultVenue: "Hï Ibiza",
   },
   {
     key: "ushuaia-events",
     label: "Ushuaia Ibiza Events",
     kind: "venue",
-    url: "https://www.theushuaiaexperience.com/en/club/events",
+    url: "https://www.theushuaiaexperience.com/en/club/calendar",
     sourceLabel: "Club Website",
     defaultType: "Club",
+    defaultVenue: "Ushuaïa Ibiza",
   },
 ];
 
@@ -198,6 +202,13 @@ const getJsonName = (value: unknown): string | null => {
   return null;
 };
 
+const getJsonNames = (value: unknown): string[] => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.map(getJsonName).filter(Boolean) as string[];
+  const name = getJsonName(value);
+  return name ? [name] : [];
+};
+
 const getJsonUrl = (value: unknown): string | null => {
   if (typeof value === "string") return value;
   if (Array.isArray(value)) return getJsonUrl(value[0]);
@@ -212,7 +223,7 @@ const getJsonLdObjects = (value: unknown): Record<string, unknown>[] => {
   const object = value as Record<string, unknown>;
   const type = object["@type"];
   const types = Array.isArray(type) ? type : [type];
-  const own = types.includes("Event") ? [object] : [];
+  const own = types.some((item) => typeof item === "string" && (item === "Event" || item.endsWith("Event"))) ? [object] : [];
   const graph = getJsonLdObjects(object["@graph"]);
   return [...own, ...graph];
 };
@@ -249,10 +260,11 @@ export const extractJsonLdCandidates = (
         if (!isEventInWindow(eventDate, windowStart, windowEnd)) continue;
 
         const location = event.location && typeof event.location === "object" ? (event.location as Record<string, unknown>) : null;
-        const venue = getJsonName(location ?? event.location);
+        const venue = getJsonName(location ?? event.location) || source.defaultVenue || null;
         const description = getJsonText(event.description);
+        const performers = getJsonNames(event.performer);
         const eventUrl = getJsonUrl(event.url) || source.url;
-        const lineupDetails = sanitizeLineupDetails(description, `${name}${venue ? ` at ${venue}` : ""}`);
+        const lineupDetails = sanitizeLineupDetails(performers.length ? performers.join(", ") : description, `${name}${venue ? ` at ${venue}` : ""}`);
         const rawCandidate = { ...event, source_url: source.url };
         const externalSeed = `${eventUrl}|${name}|${eventDate ?? ""}|${venue ?? ""}`;
 
@@ -284,7 +296,104 @@ export const extractJsonLdCandidates = (
     }
   }
 
+  if (source.key === "pacha-events") {
+    candidates.push(...extractPachaInitialEventsCandidates(html, source, windowStart, windowEnd));
+  }
+
   return candidates;
+};
+
+const decodeEmbeddedJsonText = (value: string) =>
+  value
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&")
+    .replace(/\\"/g, '"')
+    .replace(/\\\//g, "/")
+    .replace(/\\u0026/g, "&");
+
+const extractJsonArrayAfterKey = (value: string, key: string): unknown[] => {
+  const keyIndex = value.indexOf(key);
+  if (keyIndex < 0) return [];
+  const start = value.indexOf("[", keyIndex);
+  if (start < 0) return [];
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < value.length; index += 1) {
+    const character = value[index];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (character === '"') inString = true;
+    if (character === "[") depth += 1;
+    if (character === "]") {
+      depth -= 1;
+      if (depth === 0) {
+        try {
+          const parsed = JSON.parse(value.slice(start, index + 1));
+          return Array.isArray(parsed) ? parsed : [];
+        } catch {
+          return [];
+        }
+      }
+    }
+  }
+  return [];
+};
+
+const extractPachaInitialEventsCandidates = (
+  html: string,
+  source: EventSource,
+  windowStart?: string | null,
+  windowEnd?: string | null,
+): NormalizedCandidate[] => {
+  const decoded = decodeEmbeddedJsonText(html);
+  const events = extractJsonArrayAfterKey(decoded, '"initialEvents":') as Record<string, unknown>[];
+
+  return events.flatMap((event) => {
+    const name = getJsonText(event.name);
+    const eventDate = dateOnlyFrom(event.start_date);
+    if (!name || !isEventInWindow(eventDate, windowStart, windowEnd)) return [];
+
+    const location = event.location && typeof event.location === "object" ? (event.location as Record<string, unknown>) : null;
+    const venue = getJsonName(location) || source.defaultVenue || null;
+    const artists = getJsonNames(event.artists);
+    const eventUrl = typeof event.slug === "string" ? `https://pacha.com/events/${event.slug}` : source.url;
+    const lineupDetails = sanitizeLineupDetails(artists.length ? artists.join(", ") : getJsonText(event.description), `${name}${venue ? ` at ${venue}` : ""}`);
+    const externalId = getJsonText(event.event_id) || stableHash(`${eventUrl}|${name}|${eventDate ?? ""}`);
+
+    const candidate: NormalizedCandidate = {
+      source_key: source.key,
+      external_id: externalId,
+      dedupe_key: "",
+      event_name: truncate(stripHtml(name), 180),
+      event_date: eventDate,
+      start_time: timeFrom(event.start_date),
+      end_time: timeFrom(event.end_date),
+      venue,
+      event_series: truncate(stripHtml(name), 180),
+      type: source.defaultType,
+      status: "Confirmed",
+      lineup_details: lineupDetails,
+      event_url: eventUrl,
+      original_source_url: source.url,
+      source_label: source.sourceLabel,
+      residents_pass: "Pacha Group Pass",
+      confidence: eventDate ? 0.9 : 0.65,
+      raw_candidate: { ...event, source_url: source.url },
+    };
+    candidate.dedupe_key = buildDedupeKey(candidate);
+    return [candidate];
+  });
 };
 
 const tokenSet = (value: string) =>

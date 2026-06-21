@@ -43,6 +43,52 @@ describe("event ingestion helpers", () => {
     expect(candidate.dedupe_key).toContain("2026-06-22");
   });
 
+  it("extracts MusicEvent performers and falls back to the source venue", () => {
+    const hiSource = DEFAULT_EVENT_SOURCES.find((item) => item.key === "hi-ibiza-events")!;
+    const html = `
+      <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@graph": [{
+            "@type": "MusicEvent",
+            "name": "Black Coffee",
+            "startDate": "2026-06-27T23:30:00",
+            "url": "https://www.hiibiza.com/events/2026/black-coffee/2026-06-27",
+            "location": { "@id": "https://www.hiibiza.com/#venue" },
+            "performer": [
+              { "@type": "MusicGroup", "name": "Black Coffee" },
+              { "@type": "MusicGroup", "name": "Skepta" }
+            ]
+          }]
+        }
+      </script>
+    `;
+
+    const [candidate] = extractJsonLdCandidates(html, hiSource, "2026-06-21", "2026-06-30");
+
+    expect(candidate.event_name).toBe("Black Coffee");
+    expect(candidate.venue).toBe("Hï Ibiza");
+    expect(candidate.lineup_details).toBe("Black Coffee, Skepta");
+    expect(candidate.event_url).toBe("https://www.hiibiza.com/events/2026/black-coffee/2026-06-27");
+  });
+
+  it("extracts Pacha embedded initial event data", () => {
+    const pachaSource = DEFAULT_EVENT_SOURCES.find((item) => item.key === "pacha-events")!;
+    const html = `
+      <script>self.__next_f.push([1,"\\"initialEvents\\":[{\\"event_id\\":\\"evt_1\\",\\"name\\":\\"SOLOMUN+1\\",\\"slug\\":\\"solomun1-21-06-2026\\",\\"description\\":\\"Solomun+1 at Pacha\\",\\"artists\\":[{\\"name\\":\\"Solomun\\"},{\\"name\\":\\"Idris Elba\\"}],\\"start_date\\":\\"2026-06-21T23:00:00+02:00\\",\\"end_date\\":\\"2026-06-22T06:00:00+02:00\\",\\"location\\":{\\"name\\":\\"Pacha Ibiza\\"}}],\\"residenciesMap\\":{}"])</script>
+    `;
+
+    const [candidate] = extractJsonLdCandidates(html, pachaSource, "2026-06-21", "2026-06-22");
+
+    expect(candidate.external_id).toBe("evt_1");
+    expect(candidate.event_name).toBe("SOLOMUN+1");
+    expect(candidate.event_date).toBe("2026-06-21");
+    expect(candidate.venue).toBe("Pacha Ibiza");
+    expect(candidate.lineup_details).toBe("Solomun, Idris Elba");
+    expect(candidate.event_url).toBe("https://pacha.com/events/solomun1-21-06-2026");
+    expect(candidate.residents_pass).toBe("Pacha Group Pass");
+  });
+
   it("keeps public lineup details free of room labels and verification metadata", () => {
     expect(
       sanitizeLineupDetails(
