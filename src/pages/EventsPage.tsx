@@ -32,6 +32,7 @@ const eventSelect = `
   notes,
   event_url,
   source,
+  status,
   residents_pass,
   featured_on_party_calendar,
   image_url,
@@ -55,6 +56,7 @@ const EventsPage = () => {
         .select(eventSelect)
         .gte("date", new Date().toISOString().slice(0, 10))
         .is("source_missing_since", null)
+        .neq("status", "Cancelled")
         .order("featured_on_party_calendar", { ascending: false })
         .order("date", { ascending: true })
         .limit(60);
@@ -118,7 +120,7 @@ const EventsPage = () => {
             <CalendarDays className="mx-auto mb-4 h-10 w-10 text-muted-foreground" />
             <h2 className="text-xl font-semibold">No upcoming events yet</h2>
             <p className="mt-2 text-muted-foreground">
-              Events will appear here after the Fourvenues sync has approved partner inventory.
+              Upcoming Ibiza events will appear here as they are approved and refreshed.
             </p>
           </div>
         )}
