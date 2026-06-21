@@ -56,6 +56,48 @@ const stopLinePattern =
   /^(how to|buy|book|tickets?|tables?|guestlist|read more|find out|share|follow|instagram|spotify|apple music|youtube|privacy|terms|contact|faq|about|calendar|vip|hotel|events?|what'?s on|sign up|keep browsing|back to events)\b/i;
 
 const labelledLineupPattern = /^(?:line\s*-?\s*up|lineup|artists?|djs?)$/i;
+const roomLabelPattern =
+  /^(?:theatre|club room|main room|terrace|garden|wild corner|the bunker|room|stage)(?:\s+(?:artcore|beatport(?:\s+live)?|all night long))?$/i;
+const priceLinePattern = /(?:€|entry before|standard ticket|vip ticket|general admission|tickets?\s+from)/i;
+const genericFillerLinePattern = /^(?:more artists? tba|more names? tba|special guests?|guest djs?|resident djs?|coming soon|line\s*up\s*coming soon|tba|to be announced)[.!…]*$/i;
+const dateLinePattern =
+  /^(?:(?:mon|tue|wed|thu|fri|sat|sun)(?:day)?[,]?\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{1,2},?\s+20\d{2}$/i;
+
+const dateTokensFor = (dateValue) => {
+  const date = new Date(`${dateValue}T12:00:00Z`);
+  if (Number.isNaN(date.getTime())) return [];
+
+  const weekdayLong = date.toLocaleDateString("en-GB", { timeZone: "UTC", weekday: "long" });
+  const weekdayShort = date.toLocaleDateString("en-GB", { timeZone: "UTC", weekday: "short" });
+  const monthLong = date.toLocaleDateString("en-GB", { timeZone: "UTC", month: "long" });
+  const monthShort = date.toLocaleDateString("en-GB", { timeZone: "UTC", month: "short" });
+  const dayNumeric = String(Number(date.toLocaleDateString("en-GB", { timeZone: "UTC", day: "2-digit" })));
+  const day2 = date.toLocaleDateString("en-GB", { timeZone: "UTC", day: "2-digit" });
+  const year = date.toLocaleDateString("en-GB", { timeZone: "UTC", year: "numeric" });
+  const month2 = date.toLocaleDateString("en-GB", { timeZone: "UTC", month: "2-digit" });
+
+  return [
+    `${weekdayLong}, ${monthShort} ${dayNumeric}, ${year}`,
+    `${weekdayLong}, ${monthLong} ${dayNumeric}, ${year}`,
+    `${weekdayShort} ${day2} ${monthShort}`,
+    `${weekdayShort} ${dayNumeric} ${monthShort}`,
+    `${monthShort} ${dayNumeric}, ${year}`,
+    `${monthLong} ${dayNumeric}, ${year}`,
+    `${day2}/${month2}/${year}`,
+  ].map((token) => token.toLowerCase());
+};
+
+const isLikelyArtistLine = (line, target) => {
+  const normalized = normalizeWhitespace(line);
+  if (!normalized) return false;
+  if (stopLinePattern.test(normalized) || priceLinePattern.test(normalized)) return false;
+  if (/^\d{1,2}[:.]\d{2}/.test(normalized) || /\b\d{1,2}:\d{2}\s*[–-]\s*(?:end|\d{1,2}:\d{2})\b/i.test(normalized)) return false;
+  if (roomLabelPattern.test(normalized) || genericFillerLinePattern.test(normalized)) return false;
+  if (dateLinePattern.test(normalized)) return false;
+  if (overlapScore(normalized, target.event_name) >= 0.75) return false;
+  if (overlapScore(normalized, target.venue || "") >= 0.75) return false;
+  return /[a-z]/i.test(normalized);
+};
 
 const extractLineupFromVisibleText = (target, text) => {
   const lines = textLines(text);
@@ -75,22 +117,31 @@ const extractLineupFromVisibleText = (target, text) => {
     if (collected.length) candidates.push(collected.join(", "));
   }
 
-  const date = new Date(`${target.date}T12:00:00Z`);
-  if (!Number.isNaN(date.getTime())) {
-    const weekday = date.toLocaleDateString("en-GB", { timeZone: "UTC", weekday: "short" }).toUpperCase();
-    const day = date.toLocaleDateString("en-GB", { timeZone: "UTC", day: "2-digit" });
-    const month = date.toLocaleDateString("en-GB", { timeZone: "UTC", month: "short" }).toUpperCase();
-    const dateToken = `${weekday} ${day} ${month}`;
+  const dateTokens = dateTokensFor(target.date);
+  if (dateTokens.length) {
+    const hasTargetDate = (line) => {
+      const normalized = normalizeWhitespace(line).toLowerCase();
+      return dateTokens.some((token) => normalized.includes(token));
+    };
 
     for (let index = 0; index < lines.length; index += 1) {
-      if (!lines[index].toUpperCase().includes(dateToken)) continue;
+      if (!hasTargetDate(lines[index])) continue;
       const sameLine = lines[index].split(":").slice(1).join(":");
       if (sameLine) candidates.push(sameLine);
-      for (const nextLine of lines.slice(index + 1, index + 4)) {
-        if (stopLinePattern.test(nextLine)) break;
-        candidates.push(nextLine);
-        break;
+
+      const collected = [];
+      for (const nextLine of lines.slice(index + 1, index + 40)) {
+        if (hasTargetDate(nextLine) && collected.length) break;
+        if (dateLinePattern.test(nextLine) && collected.length) break;
+        if (stopLinePattern.test(nextLine) || priceLinePattern.test(nextLine)) {
+          if (collected.length) break;
+          continue;
+        }
+        if (!isLikelyArtistLine(nextLine, target)) continue;
+        collected.push(nextLine);
+        if (collected.length >= 18 || collected.join(", ").length > 650) break;
       }
+      if (collected.length) candidates.push(collected.join(", "));
     }
   }
 
