@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.sync-fourvenues-events]
 verify_jwt = false
+
+[functions.sync-ibiza-events-agent]
+verify_jwt = false
