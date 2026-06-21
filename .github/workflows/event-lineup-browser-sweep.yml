@@ -66,8 +66,9 @@ jobs:
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      WINDOW_DAYS: "14"
-      LIMIT: "20"
+      WINDOW_DAYS: "180"
+      LIMIT: "3"
+      VENUE_PATTERN: "CamelPhat|Hï Ibiza"
       RUN_TYPE: ${{ github.event_name == 'schedule' && 'daily' || 'manual' }}
     steps:
       - name: Check out repository
