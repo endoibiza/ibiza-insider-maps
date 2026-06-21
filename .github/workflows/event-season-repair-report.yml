@@ -1,0 +1,41 @@
+name: Event season repair report
+
+on:
+  workflow_dispatch:
+    inputs:
+      window_days:
+        description: Days ahead to audit
+        required: false
+        default: "180"
+
+jobs:
+  season-repair-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    name: season-repair-report
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      WINDOW_DAYS: ${{ inputs.window_days }}
+      OUTPUT_FILE: event-season-repair-report.md
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate season repair report
+        run: node scripts/event-season-repair-report.mjs
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: event-season-repair-report
+          path: event-season-repair-report.md
