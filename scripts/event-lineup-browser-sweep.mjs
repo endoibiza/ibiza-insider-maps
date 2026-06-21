@@ -217,8 +217,11 @@ try {
       if (!proposed || isWeakLineup(proposed) || proposed === normalizeWhitespace(target.lineup_details || "")) continue;
 
       const confidence = Math.min(0.95, 0.82 + (target.source_type === "official_venue" ? 0.08 : 0.03));
-      const approvalStatus = isWeakLineup(target.lineup_details) &&
-        !isGenericLineupProposal(proposed) &&
+      const isGenericProposal = isGenericLineupProposal(proposed);
+      const approvalStatus = isGenericProposal
+        ? "rejected"
+        : isWeakLineup(target.lineup_details) &&
+        !isGenericProposal &&
         ["official_venue", "ibiza_spotlight"].includes(target.source_type) &&
         confidence >= 0.86
         ? "auto_safe"
@@ -246,6 +249,7 @@ try {
             renderer: "playwright",
             source_event_name: matched.name || null,
             source_event_url: matched.url || null,
+            quality_gate: isGenericProposal ? "rejected_generic_or_partial_lineup" : "passed_generic_lineup_check",
           },
         }, { onConflict: "event_id,source_url,proposal_hash" });
 
