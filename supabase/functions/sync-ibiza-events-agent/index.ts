@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 import {
+  buildEventSourceLink,
   buildIbizaEventInsert,
   buildSafeExistingEventPatch,
   DEFAULT_EVENT_SOURCES,
@@ -137,6 +138,19 @@ const selectExistingEventsForDate = async (supabase: ReturnType<typeof createCli
   return (data ?? []) as ExistingEvent[];
 };
 
+const upsertEventSourceLink = async (
+  supabase: ReturnType<typeof createClient>,
+  link: ReturnType<typeof buildEventSourceLink>,
+) => {
+  if (!link) return;
+  const onConflict = link.event_id ? "event_id,source_url" : "candidate_id,source_url";
+  const { error } = await supabase
+    .from("event_source_links")
+    .upsert(link, { onConflict });
+
+  if (error) throw error;
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -255,6 +269,9 @@ serve(async (req) => {
                 event_url: candidate.event_url,
                 original_source_url: candidate.original_source_url,
                 source_label: candidate.source_label,
+                source_url_type: candidate.source_url_type,
+                canonical_source_url: candidate.canonical_source_url,
+                maintenance_flags: candidate.maintenance_flags,
                 residents_pass: candidate.residents_pass,
                 confidence: candidate.confidence,
                 review_status: reviewStatus,
@@ -267,6 +284,11 @@ serve(async (req) => {
             if (candidateError) throw candidateError;
             candidateId = staged.id;
             candidatesInserted += 1;
+
+            await upsertEventSourceLink(
+              supabase,
+              buildEventSourceLink(candidate, existingEvent?.id ?? null, candidateId, snapshotId),
+            );
           }
 
           if (!syncRequest.writeEvents || syncRequest.dryRun) continue;
@@ -285,13 +307,20 @@ serve(async (req) => {
               mergedCandidate = true;
             }
           } else if (reviewStatus === "auto_safe") {
-            const { error: insertError } = await supabase
+            const { data: insertedEvent, error: insertError } = await supabase
               .from("ibiza_events")
-              .insert(buildIbizaEventInsert(candidate));
+              .insert(buildIbizaEventInsert(candidate))
+              .select("id")
+              .single();
 
             if (insertError) throw insertError;
             eventsInserted += 1;
             mergedCandidate = true;
+
+            await upsertEventSourceLink(
+              supabase,
+              buildEventSourceLink(candidate, insertedEvent.id, candidateId, snapshotId),
+            );
           }
 
           if (candidateId && mergedCandidate) {

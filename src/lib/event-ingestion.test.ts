@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   buildAgentNotionPageId,
   buildDedupeKey,
+  buildEventSourceLink,
   buildIbizaEventInsert,
+  buildMaintenanceFlags,
   buildSafeExistingEventPatch,
+  classifySourceUrl,
   DEFAULT_EVENT_SOURCES,
   extractJsonLdCandidates,
   findExistingEventMatch,
@@ -130,6 +133,24 @@ describe("event ingestion helpers", () => {
     expect(candidate.event_url).toBe("https://www.ibiza-spotlight.com/event/beach-yoga");
   });
 
+  it("classifies event URLs for the source-link maintenance layer", () => {
+    expect(classifySourceUrl("https://pacha.com/event/solomun1-21-06-2026")).toBe("official_venue");
+    expect(classifySourceUrl("https://site.fourvenues.com/en/528-ibiza/events/example")).toBe("fourvenues_public");
+    expect(classifySourceUrl("https://www.ibiza-spotlight.com/night/events/2026/06/21")).toBe("ibiza_spotlight");
+    expect(classifySourceUrl("https://shotgun.live/events/tomodachi")).toBe("ticketing_platform");
+    expect(classifySourceUrl("https://visitsantaeulalia.com/en/agenda/example")).toBe("municipal");
+  });
+
+  it("flags candidates that need URL or lineup repair", () => {
+    expect(buildMaintenanceFlags({ event_url: null, lineup_details: "" })).toEqual([
+      "missing_event_url",
+      "missing_lineup_details",
+    ]);
+    expect(buildMaintenanceFlags({ event_url: "https://pacha.com/events", lineup_details: "Lineup" })).toEqual([
+      "generic_event_url",
+    ]);
+  });
+
   it("keeps public lineup details free of room labels and verification metadata", () => {
     expect(
       sanitizeLineupDetails(
@@ -208,6 +229,9 @@ describe("event ingestion helpers", () => {
       event_url: "https://example.com/music-on",
       original_source_url: source.url,
       source_label: "Ibiza Spotlight",
+      source_url_type: "unknown" as const,
+      canonical_source_url: "https://example.com/music-on",
+      maintenance_flags: [],
       residents_pass: null,
       confidence: 0.9,
       raw_candidate: {},
@@ -240,6 +264,9 @@ describe("event ingestion helpers", () => {
       event_url: "https://example.com/music-on",
       original_source_url: source.url,
       source_label: "Ibiza Spotlight",
+      source_url_type: "unknown" as const,
+      canonical_source_url: "https://example.com/music-on",
+      maintenance_flags: [],
       residents_pass: null,
       confidence: 0.9,
       raw_candidate: {},
@@ -256,5 +283,43 @@ describe("event ingestion helpers", () => {
         event_series: "Music On",
       }),
     ).toEqual({});
+  });
+
+  it("builds source-link records without requiring a public event write", () => {
+    const candidate = {
+      source_key: "spotlight-party-calendar",
+      external_id: "abc123",
+      dedupe_key: "key",
+      event_name: "Music On",
+      event_date: "2026-06-22",
+      start_time: "23:59",
+      end_time: null,
+      venue: "Pacha",
+      event_series: "Music On",
+      type: "Club",
+      status: "Confirmed",
+      lineup_details: "Marco Carola",
+      event_url: "https://www.ibiza-spotlight.com/night/promoters/music-on",
+      original_source_url: source.url,
+      source_label: "Ibiza Spotlight",
+      source_url_type: "ibiza_spotlight" as const,
+      canonical_source_url: "https://www.ibiza-spotlight.com/night/promoters/music-on",
+      maintenance_flags: [],
+      residents_pass: null,
+      confidence: 0.7,
+      raw_candidate: {},
+    };
+
+    const link = buildEventSourceLink(candidate, null, "candidate-id", "snapshot-id");
+
+    expect(link).toMatchObject({
+      event_id: null,
+      candidate_id: "candidate-id",
+      snapshot_id: "snapshot-id",
+      source_url: "https://www.ibiza-spotlight.com/night/promoters/music-on",
+      source_type: "ibiza_spotlight",
+      canonical_for_updates: true,
+      monetizable: false,
+    });
   });
 });

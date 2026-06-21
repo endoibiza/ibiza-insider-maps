@@ -1,4 +1,15 @@
 export type SourceKind = "spotlight" | "venue" | "municipal" | "platform" | "signal" | "news";
+export type SourceUrlType =
+  | "official_venue"
+  | "fourvenues_public"
+  | "fourvenues_channel"
+  | "ibiza_spotlight"
+  | "municipal"
+  | "ticketing_platform"
+  | "aggregator"
+  | "social"
+  | "manual"
+  | "unknown";
 
 export type EventSource = {
   key: string;
@@ -26,6 +37,9 @@ export type NormalizedCandidate = {
   event_url: string | null;
   original_source_url: string | null;
   source_label: string;
+  source_url_type: SourceUrlType;
+  canonical_source_url: string | null;
+  maintenance_flags: string[];
   residents_pass: string | null;
   confidence: number;
   raw_candidate: Record<string, unknown>;
@@ -196,6 +210,105 @@ export const buildDedupeKey = (candidate: Pick<NormalizedCandidate, "event_date"
 export const buildAgentNotionPageId = (candidate: Pick<NormalizedCandidate, "source_key" | "external_id">) =>
   `agent:${candidate.source_key}:${candidate.external_id}`;
 
+const OFFICIAL_VENUE_DOMAINS = [
+  "pacha.com",
+  "hiibiza.com",
+  "theushuaiaexperience.com",
+  "unvrs.com",
+  "amnesia.es",
+  "dc10ibiza.com",
+  "circolocoibiza.com",
+  "covasanta.com",
+  "ibizarocks.com",
+  "pikesibiza.com",
+  "528ibiza.com",
+  "chinois.com",
+  "akashaibiza.com",
+  "lasdalias.es",
+  "edenibiza.com",
+  "liogroup.com",
+  "bluemarlinibiza.com",
+  "nikkibeach.com",
+  "jockeyclubibiza.com",
+  "ibiza.cafedelmar.com",
+];
+
+const MUNICIPAL_DOMAINS = [
+  "visitsantaeulalia.com",
+  "santaeulariadesriu.com",
+  "eivissa.es",
+  "santantoni.net",
+  "visit.santantoni.net",
+  "santjosep.org",
+  "santjoandelabritja.com",
+  "conselldeivissa.es",
+  "caib.es",
+  "illesbalears.travel",
+];
+
+const TICKETING_DOMAINS = [
+  "ra.co",
+  "shotgun.live",
+  "eventbrite.",
+  "skiddle.com",
+  "dice.fm",
+  "ticketing",
+  "tickets",
+  "bacantix.com",
+  "reservaentradas.com",
+];
+
+export const classifySourceUrl = (url: string | null | undefined, source?: Pick<EventSource, "kind"> | null): SourceUrlType => {
+  if (!url) return "unknown";
+  const normalized = url.toLowerCase();
+  if (normalized.includes("channels-service.fourvenues.com")) return "fourvenues_channel";
+  if (normalized.includes("fourvenues.com") || normalized.includes("fourvenues.site")) return "fourvenues_public";
+  if (normalized.includes("ibiza-spotlight.com")) return "ibiza_spotlight";
+  if (MUNICIPAL_DOMAINS.some((domain) => normalized.includes(domain))) return "municipal";
+  if (TICKETING_DOMAINS.some((domain) => normalized.includes(domain))) return "ticketing_platform";
+  if (normalized.includes("instagram.com") || normalized.includes("facebook.com") || normalized.includes("x.com") || normalized.includes("twitter.com")) {
+    return "social";
+  }
+  if (OFFICIAL_VENUE_DOMAINS.some((domain) => normalized.includes(domain))) return "official_venue";
+  if (source?.kind === "venue") return "official_venue";
+  if (source?.kind === "municipal") return "municipal";
+  if (source?.kind === "platform") return "ticketing_platform";
+  if (source?.kind === "spotlight") return "ibiza_spotlight";
+  return "unknown";
+};
+
+const isGenericEventUrl = (url: string | null | undefined) => {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return /\/(events|calendar|agenda)\/?$/i.test(parsed.pathname) || /ibiza-spotlight\.com$/i.test(parsed.hostname) && /\/(night\/events|events)\/?$/i.test(parsed.pathname);
+  } catch {
+    return false;
+  }
+};
+
+export const buildMaintenanceFlags = (candidate: Pick<NormalizedCandidate, "event_url" | "lineup_details">) => {
+  const flags: string[] = [];
+  if (!candidate.event_url) flags.push("missing_event_url");
+  if (!candidate.lineup_details || !candidate.lineup_details.trim()) flags.push("missing_lineup_details");
+  if (isGenericEventUrl(candidate.event_url)) flags.push("generic_event_url");
+  return flags;
+};
+
+const enrichCandidateSourceMetadata = <T extends Omit<NormalizedCandidate, "source_url_type" | "canonical_source_url" | "maintenance_flags">>(
+  candidate: T,
+  source: EventSource,
+): NormalizedCandidate => {
+  const sourceUrlType = classifySourceUrl(candidate.event_url, source);
+  const maintenanceFlags = buildMaintenanceFlags(candidate);
+  return {
+    ...candidate,
+    source_url_type: sourceUrlType,
+    canonical_source_url: maintenanceFlags.includes("generic_event_url") ? null : candidate.event_url,
+    maintenance_flags: maintenanceFlags,
+  };
+};
+
 const getJsonText = (value: unknown): string | null => {
   if (typeof value === "string") return value;
   if (typeof value === "number") return String(value);
@@ -283,7 +396,7 @@ export const extractJsonLdCandidates = (
         const rawCandidate = { ...event, source_url: source.url };
         const externalSeed = `${eventUrl}|${name}|${eventDate ?? ""}|${venue ?? ""}`;
 
-        const candidate: NormalizedCandidate = {
+        const candidate = enrichCandidateSourceMetadata({
           source_key: source.key,
           external_id: stableHash(externalSeed),
           dedupe_key: "",
@@ -302,7 +415,7 @@ export const extractJsonLdCandidates = (
           residents_pass: null,
           confidence: eventDate ? 0.82 : 0.62,
           raw_candidate: rawCandidate,
-        };
+        }, source);
         candidate.dedupe_key = buildDedupeKey(candidate);
         candidates.push(candidate);
       }
@@ -390,7 +503,7 @@ const extractPachaInitialEventsCandidates = (
     const lineupDetails = sanitizeLineupDetails(artists.length ? artists.join(", ") : getJsonText(event.description), `${name}${venue ? ` at ${venue}` : ""}`);
     const externalId = getJsonText(event.event_id) || stableHash(`${eventUrl}|${name}|${eventDate ?? ""}`);
 
-    const candidate: NormalizedCandidate = {
+    const candidate = enrichCandidateSourceMetadata({
       source_key: source.key,
       external_id: externalId,
       dedupe_key: "",
@@ -409,7 +522,7 @@ const extractPachaInitialEventsCandidates = (
       residents_pass: "Pacha Group Pass",
       confidence: eventDate ? 0.9 : 0.65,
       raw_candidate: { ...event, source_url: source.url },
-    };
+    }, source);
     candidate.dedupe_key = buildDedupeKey(candidate);
     return [candidate];
   });
@@ -445,7 +558,7 @@ const extractSpotlightPartyCalendarCandidates = (
       const name = decodeHtml(titleMatch[3]);
       const lineupDetails = sanitizeLineupDetails(djs.join(", "), `${name}${venue ? ` at ${venue}` : ""}`);
 
-      const candidate: NormalizedCandidate = {
+      const candidate = enrichCandidateSourceMetadata({
         source_key: source.key,
         external_id: id,
         dedupe_key: "",
@@ -464,7 +577,7 @@ const extractSpotlightPartyCalendarCandidates = (
         residents_pass: null,
         confidence: eventDate ? 0.84 : 0.62,
         raw_candidate: { event_id: id, source_url: source.url },
-      };
+      }, source);
       candidate.dedupe_key = buildDedupeKey(candidate);
       return [candidate];
     });
@@ -527,6 +640,37 @@ export const buildIbizaEventInsert = (candidate: NormalizedCandidate) => ({
   residents_pass: candidate.residents_pass,
   last_synced_at: new Date().toISOString(),
 });
+
+export const buildEventSourceLink = (
+  candidate: NormalizedCandidate,
+  eventId: string | null,
+  candidateId: string | null,
+  snapshotId: string | null,
+) => {
+  const sourceUrl = candidate.canonical_source_url || candidate.event_url || candidate.original_source_url;
+  if (!sourceUrl) return null;
+
+  return {
+    event_id: eventId,
+    candidate_id: candidateId,
+    snapshot_id: snapshotId,
+    source_url: sourceUrl,
+    source_type: candidate.source_url_type,
+    source_key: candidate.source_key,
+    source_label: candidate.source_label,
+    canonical_for_updates: Boolean(candidate.canonical_source_url),
+    monetizable: candidate.source_url_type === "fourvenues_public" || candidate.source_url_type === "fourvenues_channel",
+    confidence: candidate.confidence,
+    last_checked_at: new Date().toISOString(),
+    status: candidate.maintenance_flags.length ? "needs_review" : "active",
+    raw_metadata: {
+      external_id: candidate.external_id,
+      event_url: candidate.event_url,
+      original_source_url: candidate.original_source_url,
+      maintenance_flags: candidate.maintenance_flags,
+    },
+  };
+};
 
 export const buildSafeExistingEventPatch = (candidate: NormalizedCandidate, existing: ExistingEvent) => {
   if (existing.fourvenues_event_id || existing.notion_page_id.startsWith("fourvenues:")) return {};
