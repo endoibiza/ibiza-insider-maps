@@ -134,6 +134,12 @@ export const stripHtml = (value: string) =>
       .replace(/&#39;/g, "'"),
   );
 
+const decodeHtml = (value: string) =>
+  stripHtml(value)
+    .replace(/&euro;/g, "EUR")
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)));
+
 export const truncate = (value: string, length: number) => (value.length > length ? `${value.slice(0, length).trim()}...` : value);
 
 export const sanitizeLineupDetails = (value: string | null | undefined, fallback: string) => {
@@ -309,6 +315,10 @@ export const extractJsonLdCandidates = (
     candidates.push(...extractPachaInitialEventsCandidates(html, source, windowStart, windowEnd));
   }
 
+  if (source.key === "spotlight-party-calendar") {
+    candidates.push(...extractSpotlightPartyCalendarCandidates(html, source, windowStart, windowEnd));
+  }
+
   return candidates;
 };
 
@@ -402,6 +412,62 @@ const extractPachaInitialEventsCandidates = (
     };
     candidate.dedupe_key = buildDedupeKey(candidate);
     return [candidate];
+  });
+};
+
+const extractSpotlightPartyCalendarCandidates = (
+  html: string,
+  source: EventSource,
+  windowStart?: string | null,
+  windowEnd?: string | null,
+): NormalizedCandidate[] => {
+  const rows = html.match(/<div class="partyCal-row[\s\S]*?(?=<!-- PartyCal Row -->|<!-- spotlight-date-page -->|$)/g) ?? [];
+
+  return rows.flatMap((row) => {
+    const venueMatch = row.match(/<li class="partyCal-venue-logo">[\s\S]*?<img[^>]+alt="([^"]+)"[\s\S]*?<\/li>/i)
+      ?? row.match(/<div class="partyCal-venue[^"]*">[\s\S]*?<span>\s*([^<]+)</i);
+    const venue = venueMatch ? decodeHtml(venueMatch[1]) : source.defaultVenue ?? null;
+    const cards = row.match(/<div class="card-ticket partyCal-ticket"[\s\S]*?(?=<\/div><!-- \/END of Card ticket -->)/g) ?? [];
+
+    return cards.flatMap((card) => {
+      const id = card.match(/data-eventid="([^"]+)"/i)?.[1] ?? null;
+      const titleMatch = card.match(/<h3 class="h3"><a href="([^"]+)"[^>]*data-eventdate="([^"]+)"[^>]*>([\s\S]*?)<\/a><\/h3>/i);
+      if (!id || !titleMatch) return [];
+
+      const eventUrl = absoluteUrl(titleMatch[1], source);
+      const eventDate = dateOnlyFrom(titleMatch[2]);
+      if (!isEventInWindow(eventDate, windowStart, windowEnd)) return [];
+
+      const timeMatch = card.match(/<time>\s*([0-9]{1,2}:[0-9]{2})(?:\s*<span class="closing">\s*-\s*([0-9]{1,2}:[0-9]{2})<\/span>)?/i);
+      const djs = [...card.matchAll(/<div class="partyDj">[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>[\s\S]*?<\/div>/gi)]
+        .map((match) => decodeHtml(match[1]))
+        .filter(Boolean);
+      const name = decodeHtml(titleMatch[3]);
+      const lineupDetails = sanitizeLineupDetails(djs.join(", "), `${name}${venue ? ` at ${venue}` : ""}`);
+
+      const candidate: NormalizedCandidate = {
+        source_key: source.key,
+        external_id: id,
+        dedupe_key: "",
+        event_name: truncate(name, 180),
+        event_date: eventDate,
+        start_time: timeMatch?.[1] ?? null,
+        end_time: timeMatch?.[2] ?? null,
+        venue: venue ? truncate(venue, 160) : null,
+        event_series: truncate(name, 180),
+        type: source.defaultType,
+        status: "Confirmed",
+        lineup_details: lineupDetails,
+        event_url: eventUrl,
+        original_source_url: source.url,
+        source_label: source.sourceLabel,
+        residents_pass: null,
+        confidence: eventDate ? 0.84 : 0.62,
+        raw_candidate: { event_id: id, source_url: source.url },
+      };
+      candidate.dedupe_key = buildDedupeKey(candidate);
+      return [candidate];
+    });
   });
 };
 

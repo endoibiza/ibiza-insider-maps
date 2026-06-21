@@ -89,6 +89,35 @@ describe("event ingestion helpers", () => {
     expect(candidate.residents_pass).toBe("Pacha Group Pass");
   });
 
+  it("extracts Spotlight party calendar card markup", () => {
+    const partySource = DEFAULT_EVENT_SOURCES.find((item) => item.key === "spotlight-party-calendar")!;
+    const html = `
+      <div class="partyCal-row">
+        <li class="partyCal-venue-logo">
+          <a href="/night/clubs/pacha_i.htm"><img alt="Pacha Ibiza"></a>
+          Pacha Ibiza
+        </li>
+        <div class="card-ticket partyCal-ticket" data-eventid="427309">
+          <time>23:00<span class="closing"> - 06:00</span></time>
+          <h3 class="h3"><a href="/night/promoters/solomun_plus1_i.htm" data-eventdate="2026-06-21">Solomun +1</a></h3>
+          <div class="partyDj"><a href="/dj/solomun">Solomun</a></div>
+          <div class="partyDj"><a href="/dj/idris-elba">Idris Elba</a></div>
+        </div><!-- /END of Card ticket -->
+      </div>
+    `;
+
+    const [candidate] = extractJsonLdCandidates(html, partySource, "2026-06-21", "2026-06-22");
+
+    expect(candidate.external_id).toBe("427309");
+    expect(candidate.event_name).toBe("Solomun +1");
+    expect(candidate.event_date).toBe("2026-06-21");
+    expect(candidate.start_time).toBe("23:00");
+    expect(candidate.end_time).toBe("06:00");
+    expect(candidate.venue).toBe("Pacha Ibiza");
+    expect(candidate.lineup_details).toBe("Solomun, Idris Elba");
+    expect(candidate.event_url).toBe("https://www.ibiza-spotlight.com/night/promoters/solomun_plus1_i.htm");
+  });
+
   it("normalizes relative source URLs to absolute URLs", () => {
     const html = `
       <script type="application/ld+json">

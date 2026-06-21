@@ -77,11 +77,41 @@ const sha256 = async (value: string) => {
     .join("");
 };
 
-const fetchSource = async (source: EventSource) => {
+const eachDate = (startDate: string, endDate: string) => {
+  const dates: string[] = [];
+  const cursor = new Date(`${startDate}T00:00:00Z`);
+  const end = new Date(`${endDate}T00:00:00Z`);
+  while (cursor <= end && dates.length < 31) {
+    dates.push(toDateOnly(cursor));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
+};
+
+const fetchSource = async (source: EventSource, startDate: string, endDate: string) => {
+  if (source.key === "spotlight-party-calendar") {
+    const pages = await Promise.all(
+      eachDate(startDate, endDate).map(async (date) => {
+        const url = `https://www.ibiza-spotlight.com/night/events/${date.replaceAll("-", "/")}`;
+        const { text } = await fetchUrl(url);
+        return `<!-- source-url:${url} -->\n${text}`;
+      }),
+    );
+
+    return {
+      response: { status: 200 },
+      text: pages.join("\n<!-- spotlight-date-page -->\n"),
+    };
+  }
+
+  return fetchUrl(source.url);
+};
+
+const fetchUrl = async (url: string) => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
   try {
-    const response = await fetch(source.url, {
+    const response = await fetch(url, {
       headers: {
         "User-Agent": "Ibiza Maps Events Agent/1.0 (+https://ibiza-maps.com)",
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -165,7 +195,7 @@ serve(async (req) => {
 
     for (const source of syncRequest.sources) {
       try {
-        const { response, text } = await fetchSource(source);
+        const { response, text } = await fetchSource(source, syncRequest.startDate, syncRequest.endDate);
         const contentHash = await sha256(text);
         const excerpt = truncate(stripHtml(text), 12000);
         const candidates = extractJsonLdCandidates(text, source, syncRequest.startDate, syncRequest.endDate);
