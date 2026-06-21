@@ -5,7 +5,20 @@ This runbook covers the remaining steps after the Supabase-first events foundati
 ## Current Safe State
 
 - `ibiza_events` remains the public site-facing event table.
-- Notion sync is still active for continuity.
+- Supabase is now the canonical event database.
+- The one-time full Notion event backfill ran on 2026-06-21:
+  - `3,287` Notion event pages seen.
+  - `103` missing rows inserted.
+  - `3,184` existing rows updated.
+  - Historical and cancelled Notion rows included.
+  - Orphan cleanup disabled.
+- A pre-cutover snapshot exists in production:
+  - `public.ibiza_events_pre_notion_cutover_20260621`
+- Scheduled Notion event sync jobs have been disabled:
+  - `sync-notion-morning`
+  - `sync-notion-midday`
+  - `sync-notion-afternoon`
+  - `sync-notion-evening`
 - External event rows are protected from Notion cleanup:
   - `notion_page_id LIKE 'agent:%'`
   - `notion_page_id LIKE 'fourvenues:%'`
@@ -94,6 +107,26 @@ Do not pass `write_events: true` until the shadow candidates have been reviewed 
 - no changes to `featured_on_party_calendar`
 - no changes to Fourvenues-owned rows
 
+## Lovable Cutover Guidance
+
+Lovable should read events from Supabase only. Do not reintroduce Notion as an event runtime, event write target, or sync source.
+
+Use this prompt if Lovable needs a project-side reminder:
+
+```text
+Ibiza Events has cut over to Supabase as the canonical events database.
+
+Use `ibiza_events` for `/events` and `/events/:slug`.
+Do not add Notion reads, Notion writes, Notion syncs, or Notion Custom Agent dependencies for events.
+
+Cancelled, hidden, or source-missing rows must not appear in the public upcoming event list.
+Historical rows may exist in Supabase for archive/admin use, but should not appear in the normal upcoming-events page.
+
+Future automated discovery should stage into Supabase review tables first (`event_candidates`, `event_source_links`, `event_maintenance_queue`) and only write to `ibiza_events` after review or explicit source-level approval.
+
+Fourvenues remains a separate partner feed. Do not call Fourvenues from the frontend. Fourvenues data should enter through Supabase Edge Functions only after the Channel Manager API key and venue approvals are available.
+```
+
 ## GitHub And Lovable
 
 The local branch is `fourvenues-events-production-setup`.
@@ -111,4 +144,3 @@ Then let Lovable pick up the branch through GitHub and verify:
 - one existing Notion-synced event
 - one staged agent candidate after review
 - one Fourvenues event after API access arrives
-
