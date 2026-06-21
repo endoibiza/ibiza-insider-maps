@@ -275,6 +275,10 @@ const endDate = process.env.END_DATE || toDateOnly(addDays(today, Number(process
 const limit = Math.min(Math.max(Number(process.env.LIMIT || 40), 1), 200);
 const venuePattern = normalizeWhitespace(process.env.VENUE_PATTERN || "");
 const venueRegex = venuePattern ? new RegExp(venuePattern, "i") : null;
+const venueSearchTokens = venuePattern
+  .split("|")
+  .map((token) => normalizeWhitespace(token).replace(/[.*+?^${}()[\]\\]/g, ""))
+  .filter((token) => token.length >= 2);
 
 const { data: run, error: runError } = await supabase
   .from("event_ingestion_runs")
@@ -299,12 +303,22 @@ const proposalStatusCounts = {};
 const sourceFailures = [];
 
 try {
-  const { data: rawTargets, error: targetError } = await supabase
+  let targetQuery = supabase
     .from("event_lineup_sweep_targets")
     .select("*")
     .gte("date", startDate)
     .lte("date", endDate)
-    .in("source_type", ["official_venue", "ibiza_spotlight", "ticketing_platform", "municipal"])
+    .in("source_type", ["official_venue", "ibiza_spotlight", "ticketing_platform", "municipal"]);
+
+  if (venueSearchTokens.length) {
+    targetQuery = targetQuery.or(
+      venueSearchTokens
+        .flatMap((token) => [`venue.ilike.%${token}%`, `event_name.ilike.%${token}%`])
+        .join(","),
+    );
+  }
+
+  const { data: rawTargets, error: targetError } = await targetQuery
     .order("priority", { ascending: false })
     .order("date", { ascending: true })
     .limit(limit);

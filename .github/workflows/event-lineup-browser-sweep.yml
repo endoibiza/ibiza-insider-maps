@@ -61,23 +61,14 @@ jobs:
   shadow-lineup-sweep-matrix:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    name: shadow-lineup-sweep (${{ matrix.label }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - label: next-30-days
-            window_days: "30"
-            limit: "100"
-          - label: full-season
-            window_days: "180"
-            limit: "200"
+    timeout-minutes: 15
+    name: shadow-lineup-sweep (pull-request-smoke)
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      WINDOW_DAYS: ${{ matrix.window_days }}
-      LIMIT: ${{ matrix.limit }}
+      WINDOW_DAYS: "180"
+      LIMIT: "3"
+      VENUE_PATTERN: "CamelPhat|Hï Ibiza"
       RUN_TYPE: ${{ github.event_name == 'schedule' && 'daily' || 'manual' }}
     steps:
       - name: Check out repository
