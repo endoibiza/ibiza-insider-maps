@@ -9,9 +9,9 @@ const requiredEnv = (name) => {
 const normalizeWhitespace = (value) => String(value || "").replace(/\s+/g, " ").trim();
 const genericUrlPattern = /(?:ibiza-spotlight\.com\/(?:night\/events|events\/?$)|\/(?:events|calendar|agenda|events-and-tickets)\/?$)/i;
 
-const canReplaceEventUrl = (value) => {
+const canReplaceEventUrl = (value, dateValue) => {
   const normalized = normalizeWhitespace(value);
-  return !normalized || genericUrlPattern.test(normalized);
+  return !normalized || genericUrlPattern.test(normalized) || hasUrlDateMismatch(dateValue, normalized);
 };
 
 const isValidUrl = (value) => {
@@ -38,6 +38,89 @@ const dateTokensFor = (dateValue) => {
 const sourceUrlMatchesDate = (sourceUrl, dateValue) => {
   const lower = String(sourceUrl || "").toLowerCase();
   return dateTokensFor(dateValue).some((token) => lower.includes(token.toLowerCase()));
+};
+
+const monthLookup = {
+  january: "01",
+  jan: "01",
+  february: "02",
+  feb: "02",
+  march: "03",
+  mar: "03",
+  april: "04",
+  apr: "04",
+  may: "05",
+  june: "06",
+  jun: "06",
+  july: "07",
+  jul: "07",
+  august: "08",
+  aug: "08",
+  september: "09",
+  sep: "09",
+  sept: "09",
+  october: "10",
+  oct: "10",
+  november: "11",
+  nov: "11",
+  december: "12",
+  dec: "12",
+};
+
+const toIsoDate = (year, month, day) => {
+  const yyyy = String(year || "");
+  const mm = String(month || "").padStart(2, "0");
+  const dd = String(day || "").padStart(2, "0");
+  if (!/^\d{4}$/.test(yyyy) || !/^\d{2}$/.test(mm) || !/^\d{2}$/.test(dd)) return "";
+  if (Number(mm) < 1 || Number(mm) > 12 || Number(dd) < 1 || Number(dd) > 31) return "";
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const extractDateTokensFromUrl = (value) => {
+  const raw = normalizeWhitespace(value);
+  if (!raw) return [];
+
+  const decoded = (() => {
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  })().toLowerCase();
+
+  const dates = new Set();
+
+  for (const match of decoded.matchAll(/\b(20\d{2})[-_/](\d{1,2})[-_/](\d{1,2})\b/g)) {
+    const date = toIsoDate(match[1], match[2], match[3]);
+    if (date) dates.add(date);
+  }
+
+  for (const match of decoded.matchAll(/\b(\d{1,2})[-_/](\d{1,2})[-_/](20\d{2})\b/g)) {
+    const firstNumber = Number(match[1]);
+    const secondNumber = Number(match[2]);
+    const dmyDate = toIsoDate(match[3], match[2], match[1]);
+    if (dmyDate) dates.add(dmyDate);
+
+    if (firstNumber <= 12 && secondNumber <= 31) {
+      const mdyDate = toIsoDate(match[3], match[1], match[2]);
+      if (mdyDate) dates.add(mdyDate);
+    }
+  }
+
+  for (const match of decoded.matchAll(/\b(\d{1,2})(?:st|nd|rd|th)?[-_\s]*(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)[-_\s]*(20\d{2})\b/gi)) {
+    const month = monthLookup[match[2].toLowerCase()];
+    const date = toIsoDate(match[3], month, match[1]);
+    if (date) dates.add(date);
+  }
+
+  return [...dates];
+};
+
+const hasUrlDateMismatch = (dateValue, urlValue) => {
+  const eventDate = String(dateValue || "");
+  const urlDates = extractDateTokensFromUrl(urlValue);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate) || !urlDates.length) return false;
+  return !urlDates.includes(eventDate);
 };
 
 const todayInMadrid = () => {
@@ -100,9 +183,9 @@ for (const link of links || []) {
   if (String(event?.status || "").toLowerCase() === "cancelled") reasons.push("cancelled_event");
   if (event?.source_missing_since) reasons.push("source_missing_event");
   if (event?.date && event.date < todayMadrid) reasons.push("past_event");
-  if (!canReplaceEventUrl(event?.event_url)) reasons.push("event_url_not_missing_or_generic");
+  if (!canReplaceEventUrl(event?.event_url, event?.date)) reasons.push("event_url_not_missing_generic_or_date_mismatched");
   if (!isValidUrl(link.source_url)) reasons.push("invalid_source_url");
-  if (!["official_venue", "fourvenues_public"].includes(link.source_type)) reasons.push("unsupported_source_type");
+  if (!["official_venue", "fourvenues_public", "ticketing_platform"].includes(link.source_type)) reasons.push("unsupported_source_type");
   if (!sourceUrlMatchesDate(link.source_url, event?.date)) reasons.push("source_url_date_mismatch");
 
   if (reasons.length) {
