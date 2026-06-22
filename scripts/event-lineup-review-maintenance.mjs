@@ -38,8 +38,23 @@ const shouldReject = (value) => {
   );
 };
 
+const todayInMadrid = () =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Madrid",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+const rejectionReason = (proposal, todayMadrid) => {
+  if (proposal.event_date && proposal.event_date < todayMadrid) return "rejected_past_event";
+  if (shouldReject(proposal.proposed_lineup_details)) return "rejected_generic_or_partial_lineup";
+  return null;
+};
+
 const supabase = createClient(requiredEnv("SUPABASE_URL"), requiredEnv("SUPABASE_SERVICE_ROLE_KEY"));
 const apply = String(process.env.APPLY || "false").toLowerCase() === "true";
+const todayMadrid = todayInMadrid();
 
 const { data: proposals, error } = await supabase
   .from("event_lineup_review_queue")
@@ -50,17 +65,19 @@ const { data: proposals, error } = await supabase
 
 if (error) throw error;
 
-const rejects = (proposals || []).filter((proposal) => shouldReject(proposal.proposed_lineup_details));
+const rejects = (proposals || [])
+  .map((proposal) => ({ proposal, reason: rejectionReason(proposal, todayMadrid) }))
+  .filter((entry) => entry.reason);
 
 if (apply && rejects.length) {
-  const updates = rejects.map((proposal) =>
+  const updates = rejects.map(({ proposal, reason }) =>
     supabase
       .from("event_lineup_review_queue")
       .update({
         approval_status: "rejected",
         raw_metadata: {
           ...(proposal.raw_metadata || {}),
-          quality_gate: "rejected_generic_or_partial_lineup",
+          quality_gate: reason,
           maintenance_rejected_at: new Date().toISOString(),
         },
       })
@@ -74,13 +91,15 @@ if (apply && rejects.length) {
 
 console.log(JSON.stringify({
   apply,
+  today_madrid: todayMadrid,
   proposals_checked: proposals?.length || 0,
   proposals_to_reject: rejects.length,
   rejected: apply ? rejects.length : 0,
-  samples: rejects.slice(0, 20).map((proposal) => ({
+  samples: rejects.slice(0, 20).map(({ proposal, reason }) => ({
     event_date: proposal.event_date,
     venue: proposal.venue,
     event_name: proposal.event_name,
+    reason,
     proposed_lineup_details: normalizeWhitespace(proposal.proposed_lineup_details),
   })),
 }, null, 2));
