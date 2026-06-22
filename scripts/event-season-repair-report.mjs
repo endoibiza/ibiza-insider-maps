@@ -54,6 +54,85 @@ const isSpotlightUrl = (event) => /ibiza-spotlight\.com/i.test(normalizeWhitespa
 const isTicketingUrl = (event) => ticketingUrlPattern.test(normalizeWhitespace(event.event_url));
 const isOfficialUrl = (event) => officialVenuePattern.test(normalizeWhitespace(event.event_url));
 
+const monthLookup = {
+  january: "01",
+  jan: "01",
+  february: "02",
+  feb: "02",
+  march: "03",
+  mar: "03",
+  april: "04",
+  apr: "04",
+  may: "05",
+  june: "06",
+  jun: "06",
+  july: "07",
+  jul: "07",
+  august: "08",
+  aug: "08",
+  september: "09",
+  sep: "09",
+  sept: "09",
+  october: "10",
+  oct: "10",
+  november: "11",
+  nov: "11",
+  december: "12",
+  dec: "12",
+};
+
+const toIsoDate = (year, month, day) => {
+  const yyyy = String(year || "");
+  const mm = String(month || "").padStart(2, "0");
+  const dd = String(day || "").padStart(2, "0");
+  if (!/^\d{4}$/.test(yyyy) || !/^\d{2}$/.test(mm) || !/^\d{2}$/.test(dd)) return "";
+  if (Number(mm) < 1 || Number(mm) > 12 || Number(dd) < 1 || Number(dd) > 31) return "";
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const extractDateTokensFromUrl = (value) => {
+  const raw = normalizeWhitespace(value);
+  if (!raw) return [];
+
+  const decoded = (() => {
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  })().toLowerCase();
+
+  const dates = new Set();
+
+  for (const match of decoded.matchAll(/\b(20\d{2})[-_/](\d{1,2})[-_/](\d{1,2})\b/g)) {
+    const date = toIsoDate(match[1], match[2], match[3]);
+    if (date) dates.add(date);
+  }
+
+  for (const match of decoded.matchAll(/\b(\d{1,2})[-_/](\d{1,2})[-_/](20\d{2})\b/g)) {
+    const date = toIsoDate(match[3], match[2], match[1]);
+    if (date) dates.add(date);
+  }
+
+  for (const match of decoded.matchAll(/\b(\d{1,2})(?:st|nd|rd|th)?[-_\s]*(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)[-_\s]*(20\d{2})\b/gi)) {
+    const month = monthLookup[match[2].toLowerCase()];
+    const date = toIsoDate(match[3], month, match[1]);
+    if (date) dates.add(date);
+  }
+
+  return [...dates];
+};
+
+const dateMismatchFor = (dateValue, urlValue) => {
+  const eventDate = String(dateValue || "");
+  const urlDates = extractDateTokensFromUrl(urlValue);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate) || !urlDates.length) return null;
+  if (urlDates.includes(eventDate)) return null;
+  return urlDates;
+};
+
+const hasEventUrlDateMismatch = (event) => Boolean(dateMismatchFor(event.date, event.event_url));
+
 const supabase = createClient(requiredEnv("SUPABASE_URL"), requiredEnv("SUPABASE_SERVICE_ROLE_KEY"));
 
 const fetchAll = async (table, select, build = (query) => query, pageSize = 1000) => {
@@ -134,6 +213,7 @@ const issueRows = visibleEvents.map((event) => ({
   spotlightUrl: isSpotlightUrl(event),
   ticketingUrl: isTicketingUrl(event),
   officialUrl: isOfficialUrl(event),
+  eventUrlDateMismatch: hasEventUrlDateMismatch(event),
 }));
 
 const issueCounts = {
@@ -146,6 +226,7 @@ const issueCounts = {
   spotlight_urls: issueRows.filter((row) => row.spotlightUrl).length,
   ticketing_urls: issueRows.filter((row) => row.ticketingUrl).length,
   official_urls: issueRows.filter((row) => row.officialUrl).length,
+  event_url_date_mismatches: issueRows.filter((row) => row.eventUrlDateMismatch).length,
   fourvenues_rows_in_scope: events.length - visibleEvents.length,
 };
 
@@ -166,6 +247,7 @@ for (const row of issueRows) {
     generic_urls: 0,
     spotlight_urls: 0,
     ticketing_urls: 0,
+    date_mismatched_urls: 0,
   };
   const flags = [
     row.missingLineup,
@@ -175,6 +257,7 @@ for (const row of issueRows) {
     row.genericUrl,
     row.spotlightUrl,
     row.ticketingUrl,
+    row.eventUrlDateMismatch,
   ];
   if (flags.some(Boolean)) current.issues += 1;
   if (row.missingLineup) current.missing_lineups += 1;
@@ -184,6 +267,7 @@ for (const row of issueRows) {
   if (row.genericUrl) current.generic_urls += 1;
   if (row.spotlightUrl) current.spotlight_urls += 1;
   if (row.ticketingUrl) current.ticketing_urls += 1;
+  if (row.eventUrlDateMismatch) current.date_mismatched_urls += 1;
   venueIssueCounts[venue] = current;
 }
 
@@ -191,6 +275,14 @@ const proposalStatusCounts = countBy(proposals, (proposal) => proposal.approval_
 const proposalSourceCounts = countBy(proposals, (proposal) => proposal.source_type);
 const sourceLinkTypeCounts = countBy(upcomingSourceLinks, (link) => link.source_type);
 const sourceLinkStatusCounts = countBy(upcomingSourceLinks, (link) => link.status);
+const eventById = new Map(visibleEvents.map((event) => [event.id, event]));
+const sourceLinkDateMismatchRows = upcomingSourceLinks
+  .map((link) => {
+    const event = eventById.get(link.event_id);
+    const mismatchedDates = dateMismatchFor(event?.date, link.source_url);
+    return mismatchedDates ? { link, event, mismatchedDates } : null;
+  })
+  .filter(Boolean);
 
 const safeProposals = proposals
   .filter((proposal) => ["auto_safe", "approved"].includes(proposal.approval_status))
@@ -209,6 +301,7 @@ const sourceLinkCoverage = {
   upcoming_events_with_canonical_links: new Set(upcomingSourceLinks.filter((link) => link.canonical_for_updates).map((link) => link.event_id)).size,
   active_source_links: upcomingSourceLinks.filter((link) => link.status === "active").length,
   needs_review_source_links: upcomingSourceLinks.filter((link) => link.status === "needs_review").length,
+  source_link_date_mismatches: sourceLinkDateMismatchRows.length,
 };
 
 const issueFlagsFor = (row) =>
@@ -220,6 +313,7 @@ const issueFlagsFor = (row) =>
     row.genericUrl && "generic_url",
     row.spotlightUrl && "spotlight_url",
     row.ticketingUrl && "ticketing_url",
+    row.eventUrlDateMismatch && `url_date_mismatch:${dateMismatchFor(row.event.date, row.event.event_url).join("/")}`,
   ].filter(Boolean);
 
 const rowPriority = (row) =>
@@ -229,7 +323,8 @@ const rowPriority = (row) =>
   (row.genericLineup ? 5 : 0) +
   (row.genericUrl ? 4 : 0) +
   (row.ticketingUrl ? 3 : 0) +
-  (row.spotlightUrl ? 2 : 0);
+  (row.spotlightUrl ? 2 : 0) +
+  (row.eventUrlDateMismatch ? 12 : 0);
 
 const sampleRows = (filterFn, limit = 25) =>
   issueRows
@@ -303,7 +398,7 @@ const report = [
   "## Top Venue Repair Board",
   "",
   formatTable(
-    ["Venue", "Issue Rows", "Missing Lineups", "Weak/TBA", "Generic Lineups", "Missing URLs", "Generic URLs", "Spotlight URLs", "Ticketing URLs"],
+    ["Venue", "Issue Rows", "Missing Lineups", "Weak/TBA", "Generic Lineups", "Missing URLs", "Generic URLs", "Spotlight URLs", "Ticketing URLs", "Date-Mismatched URLs"],
     Object.entries(venueIssueCounts)
       .sort((left, right) => right[1].issues - left[1].issues || left[0].localeCompare(right[0]))
       .slice(0, 20)
@@ -317,6 +412,7 @@ const report = [
         counts.generic_urls,
         counts.spotlight_urls,
         counts.ticketing_urls,
+        counts.date_mismatched_urls,
       ]),
   ),
   "",
@@ -363,6 +459,33 @@ const report = [
   formatTable(
     ["Date", "Venue", "Event", "Flags", "Current Lineup", "Current URL"],
     sampleRows((row) => row.ticketingUrl, 40),
+  ),
+  "",
+  "### Date-Mismatched Event URL Rows",
+  "",
+  "Rows here have an explicit date embedded in the current public event URL that does not match the event date. These should be queued for official URL repair before lineup automation trusts the link.",
+  "",
+  formatTable(
+    ["Date", "Venue", "Event", "Flags", "Current Lineup", "Current URL"],
+    sampleRows((row) => row.eventUrlDateMismatch, 40),
+  ),
+  "",
+  "### Date-Mismatched Source Link Rows",
+  "",
+  "Rows here have staged source links whose URL date token does not match the Supabase event date. Keep them out of safe apply batches until the correct date-specific source is found.",
+  "",
+  formatTable(
+    ["Event Date", "Venue", "Event", "Link Date(s)", "Source Type", "Canonical", "Status", "Source URL"],
+    sourceLinkDateMismatchRows.slice(0, 40).map(({ link, event, mismatchedDates }) => [
+      event?.date || "",
+      event?.venue || "",
+      event?.event_name || "",
+      mismatchedDates.join(", "),
+      link.source_type,
+      link.canonical_for_updates ? "yes" : "no",
+      link.status,
+      link.source_url,
+    ]),
   ),
   "",
   "## Lineup Proposal Staging",
