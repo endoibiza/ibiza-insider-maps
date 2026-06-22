@@ -292,6 +292,10 @@ const sourceLinkDateMismatchRows = upcomingSourceLinks
     return mismatchedDates ? { link, event, mismatchedDates } : null;
   })
   .filter(Boolean);
+const canonicalSourceLinkDateMismatchRows = sourceLinkDateMismatchRows.filter(({ link }) => link.canonical_for_updates);
+const activeCanonicalSourceLinkDateMismatchRows = canonicalSourceLinkDateMismatchRows.filter(
+  ({ link }) => link.status === "active",
+);
 
 const safeProposals = proposals
   .filter((proposal) => ["auto_safe", "approved"].includes(proposal.approval_status))
@@ -311,6 +315,8 @@ const sourceLinkCoverage = {
   active_source_links: upcomingSourceLinks.filter((link) => link.status === "active").length,
   needs_review_source_links: upcomingSourceLinks.filter((link) => link.status === "needs_review").length,
   source_link_date_mismatches: sourceLinkDateMismatchRows.length,
+  canonical_source_link_date_mismatches: canonicalSourceLinkDateMismatchRows.length,
+  active_canonical_source_link_date_mismatches: activeCanonicalSourceLinkDateMismatchRows.length,
 };
 
 const issueFlagsFor = (row) =>
