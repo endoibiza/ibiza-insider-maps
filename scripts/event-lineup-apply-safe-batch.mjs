@@ -57,6 +57,22 @@ const canReplaceEventUrl = (value) => {
 const sameLineup = (left, right) =>
   normalizeWhitespace(left).toLowerCase() === normalizeWhitespace(right).toLowerCase();
 
+const lineupArtistTokens = (value) =>
+  normalizeWhitespace(value)
+    .split(/\s*,\s*/)
+    .map((item) => item.toLowerCase().replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+
+const sameLineupArtistSet = (left, right) => {
+  const leftTokens = lineupArtistTokens(left);
+  const rightTokens = lineupArtistTokens(right);
+  if (leftTokens.length < 2 || leftTokens.length !== rightTokens.length) return false;
+  const leftSet = new Set(leftTokens);
+  const rightSet = new Set(rightTokens);
+  if (leftSet.size !== leftTokens.length || rightSet.size !== rightTokens.length) return false;
+  return leftTokens.every((token) => rightSet.has(token));
+};
+
 const dateTokensFor = (dateValue) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateValue || ""))) return [];
   const [year, month, day] = dateValue.split("-");
@@ -218,6 +234,8 @@ for (const proposal of proposals || []) {
   if (reasons.length) {
     if (event && reasons.length === 1 && reasons[0] === "current_lineup_not_weak" && sameLineup(event.lineup_details, proposal.proposed_lineup_details)) {
       alreadyApplied.push({ proposal, event });
+    } else if (event && reasons.length === 1 && reasons[0] === "current_lineup_not_weak" && sameLineupArtistSet(event.lineup_details, proposal.proposed_lineup_details)) {
+      alreadyApplied.push({ proposal, event, noopReason: "same_artist_set_different_order" });
     } else {
       rejected.push({ proposal, event, reasons });
     }
@@ -229,7 +247,7 @@ for (const proposal of proposals || []) {
 let updated = 0;
 let markedApplied = 0;
 if (apply && alreadyApplied.length) {
-  for (const { proposal } of alreadyApplied) {
+  for (const { proposal, noopReason } of alreadyApplied) {
     const { error: proposalError } = await supabase
       .from("event_lineup_review_queue")
       .update({
@@ -239,6 +257,7 @@ if (apply && alreadyApplied.length) {
           ...(proposal.raw_metadata || {}),
           safe_apply_batch: true,
           safe_apply_noop: true,
+          safe_apply_noop_reason: noopReason || "same_lineup_text",
           safe_apply_batch_at: new Date().toISOString(),
         },
       })
