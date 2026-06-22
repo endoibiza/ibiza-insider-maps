@@ -1,0 +1,44 @@
+name: Event lineup apply safe batch
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Apply guarded public ibiza_events updates
+        required: false
+        default: "false"
+      source_type:
+        description: Proposal source type to apply
+        required: false
+        default: "fourvenues_public"
+      limit:
+        description: Maximum proposals to inspect
+        required: false
+        default: "10"
+
+jobs:
+  lineup-apply-safe-batch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    name: lineup-apply-safe-batch
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      APPLY: ${{ inputs.apply }}
+      SOURCE_TYPE: ${{ inputs.source_type }}
+      LIMIT: ${{ inputs.limit }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Apply safe lineup batch
+        run: node scripts/event-lineup-apply-safe-batch.mjs
