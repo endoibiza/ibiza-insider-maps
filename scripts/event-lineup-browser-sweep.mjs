@@ -28,7 +28,8 @@ const stripHtml = (value) =>
 
 const sanitizeLineup = (value, fallback = "") => {
   const cleaned = stripHtml(value)
-    .replace(/\b(?:Theatre|Club|Garden|Terrace|Main Room|The Bunker|Wild Comet|Room|Stage)\s*:\s*/gi, "")
+    .replace(/\b(?:Theatre|Club|Garden|Terrace|Main Room|The Bunker|Wild Comet|Room|Stage)(?:\s*\([^)]+\))?\s*:\s*/gi, "")
+    .replace(/\bSpecial\s+Guests?\s*:\s*/gi, "")
     .replace(/\s*\((?:verified|updated)\s+[^)]*\)/gi, "")
     .replace(/\b(?:agent run|run id|verified on|last verified)\s*[:#-]?\s*[\w:-]+/gi, "");
   return normalizeWhitespace(cleaned || fallback).slice(0, 750);
@@ -135,7 +136,7 @@ const extractLineupFromVisibleText = (target, text) => {
     for (let index = 0; index < lines.length; index += 1) {
       if (!hasTargetDate(lines[index])) continue;
       const sameLine = lines[index].split(":").slice(1).join(":");
-      if (sameLine) candidates.push(sameLine);
+      if (sameLine && isLikelyArtistLine(sameLine, target)) candidates.push(sameLine);
 
       const collected = [];
       for (const nextLine of lines.slice(index + 1, index + 40)) {
@@ -157,6 +158,7 @@ const extractLineupFromVisibleText = (target, text) => {
     .map((candidate) => sanitizeLineup(candidate, ""))
     .find((candidate) =>
       candidate &&
+      !isGenericLineupProposal(candidate) &&
       candidate !== normalizeWhitespace(target.lineup_details || "") &&
       overlapScore(candidate, target.event_name) < 0.75
     ) || "";
