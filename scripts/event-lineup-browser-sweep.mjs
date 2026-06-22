@@ -63,7 +63,7 @@ const stopLinePattern =
 const labelledLineupPattern = /^(?:line\s*-?\s*up|lineup|artists?|djs?)$/i;
 const roomLabelPattern =
   /^(?:theatre|club room|main room|terrace|garden|wild corner|the bunker|room|stage)(?:\s+(?:artcore|beatport(?:\s+live)?|all night long))?$/i;
-const priceLinePattern = /(?:€|early access|entry before|before\s+\d{1,2}[:.]?\d{2}|standard ticket|vip ticket|balcony ticket|general admission|tickets?\s+from)/i;
+const priceLinePattern = /(?:€|early access|entry before|before\s+\d{1,2}[:.]?\d{2}|standard ticket|vip ticket|vip experience|vip access|vip table|vip upgrade|balcony ticket|general admission|tickets?\s+from|drinks?\s+package|meet\s*&?\s*greet)/i;
 const genericFillerLinePattern = /^(?:more artists? tba|more names? tba|special guests?|guest djs?|resident djs?|coming soon|line\s*up\s*coming soon|tba|to be announced)[.!…]*$/i;
 const dateLinePattern =
   /^(?:(?:mon|tue|wed|thu|fri|sat|sun)(?:day)?[,]?\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{1,2},?\s+20\d{2}$/i;
