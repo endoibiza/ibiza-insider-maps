@@ -1,0 +1,55 @@
+name: Event lineup proposal report
+
+on:
+  workflow_dispatch:
+    inputs:
+      venue_pattern:
+        description: Optional case-insensitive venue/event filter
+        required: false
+        default: ""
+      approval_status:
+        description: Proposal status filter, or all
+        required: false
+        default: "pending"
+      source_type:
+        description: Optional source type filter, comma-separated
+        required: false
+        default: ""
+      limit:
+        description: Maximum proposals to show
+        required: false
+        default: "50"
+
+jobs:
+  lineup-proposal-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    name: lineup-proposal-report
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      VENUE_PATTERN: ${{ inputs.venue_pattern }}
+      APPROVAL_STATUS: ${{ inputs.approval_status }}
+      SOURCE_TYPE: ${{ inputs.source_type }}
+      LIMIT: ${{ inputs.limit }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate proposal report
+        run: node scripts/event-lineup-proposal-report.mjs
+
+      - name: Upload proposal report
+        uses: actions/upload-artifact@v4
+        with:
+          name: event-lineup-proposal-report
+          path: reports/event-lineup-proposal-report.md
