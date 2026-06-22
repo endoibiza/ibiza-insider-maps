@@ -220,7 +220,7 @@ const { data: proposals, error } = await supabase
   .from("event_lineup_review_queue")
   .select("id,event_id,event_name,event_date,venue,source_url,source_type,current_lineup_details,proposed_lineup_details,lineup_confidence,approval_status,raw_metadata")
   .eq("source_type", sourceType)
-  .eq("approval_status", "pending")
+  .in("approval_status", ["pending", "auto_safe"])
   .gte("lineup_confidence", 0.9)
   .order("event_date", { ascending: true })
   .limit(limit);
