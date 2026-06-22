@@ -172,6 +172,26 @@ const extractLineupFromVisibleText = (target, text) => {
 
     for (let index = 0; index < lines.length; index += 1) {
       if (!hasTargetDate(lines[index])) continue;
+      const previousBlock = lines.slice(Math.max(0, index - 45), index);
+      const lineupLabelIndex = previousBlock
+        .map((line, blockIndex) => ({ line: line.replace(/:$/, ""), blockIndex }))
+        .filter(({ line }) => labelledLineupPattern.test(line))
+        .at(-1)?.blockIndex;
+
+      if (lineupLabelIndex !== undefined) {
+        const collected = [];
+        for (const previousLine of previousBlock.slice(lineupLabelIndex + 1)) {
+          if (stopLinePattern.test(previousLine) || /^image:/i.test(previousLine)) {
+            if (collected.length) break;
+            continue;
+          }
+          if (!isLikelyArtistLine(previousLine, target)) continue;
+          collected.push(previousLine);
+          if (collected.length >= 18 || collected.join(", ").length > 650) break;
+        }
+        if (collected.length) candidates.push(collected.join(", "));
+      }
+
       const sameLine = lines[index].split(":").slice(1).join(":");
       if (sameLine && isLikelyArtistLine(sameLine, target)) candidates.push(sameLine);
 
