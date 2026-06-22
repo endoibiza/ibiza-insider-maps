@@ -466,11 +466,37 @@ try {
         const { error: sourceLinkUpdateError } = await supabase
           .from("event_source_links")
           .update({
+            snapshot_id: snapshot.id,
             last_checked_at: new Date().toISOString(),
           })
           .eq("id", target.source_link_id);
 
         if (sourceLinkUpdateError) throw sourceLinkUpdateError;
+      } else {
+        const sourceType = sweepSourceTypes.includes(target.source_type) ? target.source_type : "unknown";
+        const canonicalForUpdates = Boolean(target.canonical_for_updates || sourceUrl === target.event_url);
+        const { error: sourceLinkUpsertError } = await supabase
+          .from("event_source_links")
+          .upsert({
+            event_id: target.event_id,
+            snapshot_id: snapshot.id,
+            source_url: sourceUrl,
+            source_type: sourceType,
+            source_key: "github-actions-browser-lineup-sweep",
+            source_label: target.venue || target.event_name || "Event source",
+            canonical_for_updates: canonicalForUpdates,
+            confidence: canonicalForUpdates ? 0.9 : 0.75,
+            status: "active",
+            last_checked_at: new Date().toISOString(),
+            raw_metadata: {
+              renderer: "playwright",
+              event_name: target.event_name,
+              venue: target.venue,
+              issue_type: target.issue_type,
+            },
+          }, { onConflict: "event_id,source_url" });
+
+        if (sourceLinkUpsertError) throw sourceLinkUpsertError;
       }
 
       const extraction = extractProposedLineup(target, html, renderedText);
