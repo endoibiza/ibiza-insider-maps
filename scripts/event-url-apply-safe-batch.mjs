@@ -38,6 +38,19 @@ const sourceUrlMatchesDate = (sourceUrl, dateValue) => {
   return dateTokensFor(dateValue).some((token) => lower.includes(token.toLowerCase()));
 };
 
+const todayInMadrid = () => {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Madrid",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const part = (type) => parts.find((item) => item.type === type)?.value;
+  return `${part("year")}-${part("month")}-${part("day")}`;
+};
+
+const todayMadrid = todayInMadrid();
+
 const splitList = (value) =>
   String(value || "")
     .split(",")
@@ -84,6 +97,7 @@ for (const link of links || []) {
   if (event?.fourvenues_event_id || String(event?.notion_page_id || "").startsWith("fourvenues:")) reasons.push("fourvenues_owned_row");
   if (String(event?.status || "").toLowerCase() === "cancelled") reasons.push("cancelled_event");
   if (event?.source_missing_since) reasons.push("source_missing_event");
+  if (event?.date && event.date < todayMadrid) reasons.push("past_event");
   if (!canReplaceEventUrl(event?.event_url)) reasons.push("event_url_not_missing_or_generic");
   if (!isValidUrl(link.source_url)) reasons.push("invalid_source_url");
   if (!["official_venue", "fourvenues_public"].includes(link.source_type)) reasons.push("unsupported_source_type");
@@ -119,6 +133,7 @@ console.log(JSON.stringify({
   apply,
   source_types: sourceTypes,
   min_confidence: minConfidence,
+  today_madrid: todayMadrid,
   links_checked: links?.length || 0,
   approved_for_apply: approved.length,
   rejected_by_guard: rejected.length,
