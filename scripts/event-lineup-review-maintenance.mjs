@@ -22,10 +22,20 @@ const weakLineupPattern = /^(tba|tbc|line\s*up\s*tba|lineup\s*tba|to be announce
 const genericLineupPattern =
   /(?:\b(?:resident\s+djs?|special\s+guests?|guest\s+djs?|line\s*up\s+coming\s+soon|coming\s+soon|more\s+(?:artists|names|acts|djs)?\s*(?:tba|soon)?|and\s+more)\b|&\s*more)/i;
 const internalMetadataPattern = /\b(agent run|run id|verified on|last verified|last checked|confidence|snapshot id)\b/i;
+const timeOnlyLineupPattern =
+  /^(?:\d{1,2}|00|30)(?:\s*\([^)]+\)\s*\/\s*\d{1,2}:\d{2}\s*\([^)]+\))?$/i;
+const truncatedLineupPattern = /(?:\.{3}|…)\s*$/;
 
 const shouldReject = (value) => {
   const normalized = normalizeWhitespace(value);
-  return !normalized || weakLineupPattern.test(normalized) || genericLineupPattern.test(normalized) || internalMetadataPattern.test(normalized);
+  return (
+    !normalized ||
+    weakLineupPattern.test(normalized) ||
+    genericLineupPattern.test(normalized) ||
+    internalMetadataPattern.test(normalized) ||
+    timeOnlyLineupPattern.test(normalized) ||
+    truncatedLineupPattern.test(normalized)
+  );
 };
 
 const supabase = createClient(requiredEnv("SUPABASE_URL"), requiredEnv("SUPABASE_SERVICE_ROLE_KEY"));
