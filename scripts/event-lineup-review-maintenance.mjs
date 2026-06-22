@@ -30,6 +30,48 @@ const truncatedLineupPattern = /(?:\.{3}|…)\s*$/;
 const eventListingLineupPattern =
   /\bon\s+\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+20\d{2},?\s+\d{1,2}:\d{2}\b/i;
 
+const dateTokensFor = (dateValue) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateValue || ""))) return [];
+  const [year, month, day] = dateValue.split("-");
+  const monthNames = [
+    "",
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+  ];
+  const numericDay = Number(day);
+  const numericMonth = Number(month);
+  const ordinalSuffix =
+    numericDay % 100 >= 11 && numericDay % 100 <= 13
+      ? "th"
+      : { 1: "st", 2: "nd", 3: "rd" }[numericDay % 10] || "th";
+  const monthName = monthNames[numericMonth] || "";
+  return [
+    `${year}-${month}-${day}`,
+    `${day}-${month}-${year}`,
+    `${Number(day)}-${Number(month)}-${year}`,
+    `${month}-${day}-${year}`,
+    `${Number(month)}-${Number(day)}-${year}`,
+    `${numericDay}${ordinalSuffix}${monthName}${year}`,
+    `${numericDay}${monthName}${year}`,
+    `${numericDay}-${monthName}-${year}`,
+  ];
+};
+
+const sourceUrlMatchesDate = (sourceUrl, dateValue) => {
+  const lower = String(sourceUrl || "").toLowerCase();
+  return dateTokensFor(dateValue).some((token) => lower.includes(token.toLowerCase()));
+};
+
 const shouldReject = (value) => {
   const normalized = normalizeWhitespace(value);
   return (
@@ -45,6 +87,11 @@ const shouldReject = (value) => {
   );
 };
 
+const currentLineupIsWeak = (value) => {
+  const normalized = normalizeWhitespace(value);
+  return !normalized || weakLineupPattern.test(normalized) || genericLineupPattern.test(normalized) || internalMetadataPattern.test(normalized);
+};
+
 const todayInMadrid = () =>
   new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Madrid",
@@ -53,9 +100,13 @@ const todayInMadrid = () =>
     day: "2-digit",
   }).format(new Date());
 
-const rejectionReason = (proposal, todayMadrid) => {
+const rejectionReason = (proposal, event, todayMadrid) => {
   if (proposal.event_date && proposal.event_date < todayMadrid) return "rejected_past_event";
   if (shouldReject(proposal.proposed_lineup_details)) return "rejected_generic_or_partial_lineup";
+  if (proposal.source_type === "ticketing_platform" && !sourceUrlMatchesDate(proposal.source_url, proposal.event_date)) {
+    return "rejected_source_url_date_mismatch";
+  }
+  if (event && !currentLineupIsWeak(event.lineup_details)) return "rejected_current_lineup_not_weak";
   return null;
 };
 
@@ -65,15 +116,27 @@ const todayMadrid = todayInMadrid();
 
 const { data: proposals, error } = await supabase
   .from("event_lineup_review_queue")
-  .select("id,event_name,event_date,venue,approval_status,proposed_lineup_details,raw_metadata")
+  .select("id,event_id,event_name,event_date,venue,source_url,source_type,approval_status,proposed_lineup_details,raw_metadata")
   .in("approval_status", ["pending", "auto_safe", "approved"])
   .order("created_at", { ascending: false })
   .limit(1000);
 
 if (error) throw error;
 
+const eventIds = [...new Set((proposals || []).map((proposal) => proposal.event_id).filter(Boolean))];
+const { data: events, error: eventsError } = eventIds.length
+  ? await supabase
+    .from("ibiza_events")
+    .select("id,lineup_details,status,source_missing_since,fourvenues_event_id,notion_page_id")
+    .in("id", eventIds)
+  : { data: [], error: null };
+
+if (eventsError) throw eventsError;
+
+const eventById = new Map((events || []).map((event) => [event.id, event]));
+
 const rejects = (proposals || [])
-  .map((proposal) => ({ proposal, reason: rejectionReason(proposal, todayMadrid) }))
+  .map((proposal) => ({ proposal, reason: rejectionReason(proposal, eventById.get(proposal.event_id), todayMadrid) }))
   .filter((entry) => entry.reason);
 
 if (apply && rejects.length) {
