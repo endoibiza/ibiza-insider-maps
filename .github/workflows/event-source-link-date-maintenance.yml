@@ -1,0 +1,44 @@
+name: Event source link date maintenance
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Demote date-mismatched source links to needs_review
+        required: false
+        default: "false"
+      start_date:
+        description: Inclusive start date
+        required: false
+        default: ""
+      end_date:
+        description: Inclusive end date
+        required: false
+        default: "2026-12-31"
+
+jobs:
+  source-link-date-maintenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    name: source-link-date-maintenance
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      APPLY: ${{ inputs.apply }}
+      START_DATE: ${{ inputs.start_date }}
+      END_DATE: ${{ inputs.end_date }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Maintain date-mismatched source links
+        run: node scripts/event-source-link-date-maintenance.mjs
