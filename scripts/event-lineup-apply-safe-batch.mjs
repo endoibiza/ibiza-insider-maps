@@ -140,11 +140,17 @@ const dateTokensFor = (dateValue) => {
     `${numericDay}${ordinalSuffix}${monthShortName}${year}`,
     `${numericDay}${monthShortName}${year}`,
     `${numericDay}-${monthShortName}-${year}`,
+    `${numericDay}${ordinalSuffix}-${monthName}`,
+    `${numericDay}-${monthName}`,
+    `${numericDay}${ordinalSuffix}-${monthShortName}`,
+    `${numericDay}-${monthShortName}`,
     ...(monthShortName === "sep"
       ? [
         `${numericDay}${ordinalSuffix}sept${year}`,
         `${numericDay}sept${year}`,
         `${numericDay}-sept-${year}`,
+        `${numericDay}${ordinalSuffix}-sept`,
+        `${numericDay}-sept`,
       ]
       : []),
   ];
