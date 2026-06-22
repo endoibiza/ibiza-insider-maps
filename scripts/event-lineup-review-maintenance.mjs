@@ -18,7 +18,8 @@ const decodeHtmlEntities = (value) =>
 
 const normalizeWhitespace = (value) => decodeHtmlEntities(value).replace(/\s+/g, " ").trim();
 
-const weakLineupPattern = /^(tba|tbc|line\s*up\s*tba|lineup\s*tba|to be announced|more tba|coming soon|line\s*up\s*coming soon)[.!…]*$/i;
+const weakLineupPattern =
+  /(?:^|\b)(tba|tbc|artists?\s*tba|line\s*-?\s*up\s*tba|lineup\s*tba|to be announced|lineup not yet posted)(?:\b|$)/i;
 const genericLineupPattern =
   /(?:\b(?:resident\s+djs?|special\s+guests?|guest\s+djs?|line\s*up\s+coming\s+soon|coming\s+soon|more\s+(?:artists|names|acts|djs)?\s*(?:tba|soon)?|and\s+more)\b|&\s*more|\+\s*(?:tba|tbc)\b)/i;
 const internalMetadataPattern = /\b(agent run|run id|verified on|last verified|last checked|confidence|snapshot id)\b/i;
@@ -29,6 +30,8 @@ const timeOnlyLineupPattern =
 const truncatedLineupPattern = /(?:\.{3}|…)\s*$/;
 const eventListingLineupPattern =
   /\bon\s+\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+20\d{2},?\s+\d{1,2}:\d{2}\b/i;
+const eventDescriptionLineupPattern =
+  /\b(?:live at|at)\s+\[?[^\]]+\]?\s+ibiza\s+on\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),?\s+\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*(?:\s+20\d{2})?/i;
 
 const dateTokensFor = (dateValue) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateValue || ""))) return [];
@@ -83,7 +86,8 @@ const shouldReject = (value) => {
     ticketTierPattern.test(normalized) ||
     timeOnlyLineupPattern.test(normalized) ||
     truncatedLineupPattern.test(normalized) ||
-    eventListingLineupPattern.test(normalized)
+    eventListingLineupPattern.test(normalized) ||
+    eventDescriptionLineupPattern.test(normalized)
   );
 };
 

@@ -33,7 +33,8 @@ const outputFile = process.env.OUTPUT_FILE || "";
 const freshnessDays = Math.max(Number(process.env.FRESHNESS_DAYS || 14), 1);
 const freshnessCutoff = addDays(today, -freshnessDays).toISOString();
 
-const weakLineupPattern = /^(tba|tbc|line\s*up\s*tba|lineup\s*tba|to be announced|more tba|coming soon|line\s*up\s*coming soon)\.?$/i;
+const weakLineupPattern =
+  /(?:^|\b)(tba|tbc|artists?\s*tba|line\s*-?\s*up\s*tba|lineup\s*tba|to be announced|lineup not yet posted)(?:\b|$)/i;
 const genericLineupPattern =
   /(?:\b(?:resident\s+djs?|special\s+guests?|guest\s+djs?|line\s*up\s+coming\s+soon|coming\s+soon|more\s+(?:artists|names|acts|djs)?\s*(?:tba|soon)?|and\s+more)\b|&\s*more)/i;
 const internalMetadataPattern = /\b(agent run|run id|verified on|last verified|last checked|confidence|snapshot id)\b/i;

@@ -36,7 +36,8 @@ const sanitizeLineup = (value, fallback = "") => {
   return normalizeWhitespace(cleaned || fallback).slice(0, 750);
 };
 
-const weakLineupPattern = /^(tba|tbc|line\s*up\s*tba|to be announced|more tba|coming soon|line\s*up\s*coming soon)\.?$/i;
+const weakLineupPattern =
+  /(?:^|\b)(tba|tbc|artists?\s*tba|line\s*-?\s*up\s*tba|lineup\s*tba|to be announced|lineup not yet posted)(?:\b|$)/i;
 const genericLineupPattern =
   /(?:\b(?:resident\s+djs?|special\s+guests?|guest\s+djs?|line\s*up\s+coming\s+soon|coming\s+soon|more\s+(?:artists|names|acts|djs)?\s*(?:tba|soon)?|and\s+more)\b|&\s*more|\+\s*(?:tba|tbc)\b)/i;
 const timeOnlyLineupPattern =
@@ -44,6 +45,8 @@ const timeOnlyLineupPattern =
 const truncatedLineupPattern = /(?:\.{3}|…)\s*$/;
 const eventListingLineupPattern =
   /\bon\s+\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+20\d{2},?\s+\d{1,2}:\d{2}\b/i;
+const eventDescriptionLineupPattern =
+  /\b(?:live at|at)\s+\[?[^\]]+\]?\s+ibiza\s+on\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),?\s+\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*(?:\s+20\d{2})?/i;
 const isWeakLineup = (value) => {
   const normalized = normalizeWhitespace(value);
   return !normalized || weakLineupPattern.test(normalized) || /\b(agent run|run id|verified on|last verified)\b/i.test(normalized);
@@ -54,7 +57,8 @@ const isGenericLineupProposal = (value) => {
     genericLineupPattern.test(normalized) ||
     timeOnlyLineupPattern.test(normalized) ||
     truncatedLineupPattern.test(normalized) ||
-    eventListingLineupPattern.test(normalized);
+    eventListingLineupPattern.test(normalized) ||
+    eventDescriptionLineupPattern.test(normalized);
 };
 
 const textLines = (value) =>
@@ -489,6 +493,16 @@ try {
         ? "auto_safe"
         : "pending";
       const proposalHash = await sha256(`${target.event_id}|${sourceUrl}|${proposed}`);
+      const { data: existingProposal, error: existingProposalError } = await supabase
+        .from("event_lineup_review_queue")
+        .select("id,approval_status")
+        .eq("event_id", target.event_id)
+        .eq("source_url", sourceUrl)
+        .eq("proposal_hash", proposalHash)
+        .maybeSingle();
+
+      if (existingProposalError) throw existingProposalError;
+      if (["applied", "rejected"].includes(existingProposal?.approval_status)) continue;
 
       const { error: proposalError } = await supabase
         .from("event_lineup_review_queue")
