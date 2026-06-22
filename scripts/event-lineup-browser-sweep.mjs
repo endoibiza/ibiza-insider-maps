@@ -65,6 +65,24 @@ const isGenericLineupProposal = (value) => {
     embeddedRoomLabelPattern.test(normalized);
 };
 
+const stripTitlePrefixFromLineupCandidate = (candidate, target) => {
+  const normalized = normalizeWhitespace(candidate);
+  if (!normalized.includes(":")) return normalized;
+
+  const [prefix, ...restParts] = normalized.split(":");
+  const rest = normalizeWhitespace(restParts.join(":"));
+  if (!rest || !rest.includes(",")) return normalized;
+
+  const sourceUrl = String(target.source_url || target.event_url || "");
+  const prefixMatchesContext =
+    /site\.fourvenues\.com/i.test(sourceUrl) ||
+    overlapScore(prefix, target.event_name || "") >= 0.35 ||
+    overlapScore(prefix, target.event_series || "") >= 0.35 ||
+    overlapScore(prefix, target.venue || "") >= 0.35;
+
+  return prefixMatchesContext ? rest : normalized;
+};
+
 const textLines = (value) =>
   String(value || "")
     .split(/\r?\n/)
@@ -172,6 +190,7 @@ const extractLineupFromVisibleText = (target, text) => {
 
   return candidates
     .map((candidate) => sanitizeLineup(candidate, ""))
+    .map((candidate) => stripTitlePrefixFromLineupCandidate(candidate, target))
     .find((candidate) =>
       candidate &&
       !isGenericLineupProposal(candidate) &&
