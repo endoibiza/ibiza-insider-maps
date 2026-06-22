@@ -358,7 +358,7 @@ try {
       .in("source_type", sweepSourceTypes)
       .in("status", ["active", "needs_review"])
       .order("confidence", { ascending: false })
-      .limit(Math.min(300, limit * 8));
+      .limit(2500);
 
     const { data: sourceLinks, error: sourceLinkError } = await sourceLinkQuery;
     if (sourceLinkError) throw sourceLinkError;
@@ -457,6 +457,17 @@ try {
 
       if (snapshotError) throw snapshotError;
       snapshotsInserted += 1;
+
+      if (target.source_link_id) {
+        const { error: sourceLinkUpdateError } = await supabase
+          .from("event_source_links")
+          .update({
+            last_checked_at: new Date().toISOString(),
+          })
+          .eq("id", target.source_link_id);
+
+        if (sourceLinkUpdateError) throw sourceLinkUpdateError;
+      }
 
       const extraction = extractProposedLineup(target, html, renderedText);
       if (!extraction) continue;

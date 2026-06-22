@@ -30,6 +30,8 @@ const toDateOnly = (date) => date.toISOString().slice(0, 10);
 const startDate = process.env.START_DATE || toDateOnly(today);
 const endDate = process.env.END_DATE || toDateOnly(addDays(today, Number(process.env.WINDOW_DAYS || 180)));
 const outputFile = process.env.OUTPUT_FILE || "";
+const freshnessDays = Math.max(Number(process.env.FRESHNESS_DAYS || 14), 1);
+const freshnessCutoff = addDays(today, -freshnessDays).toISOString();
 
 const weakLineupPattern = /^(tba|tbc|line\s*up\s*tba|lineup\s*tba|to be announced|more tba|coming soon|line\s*up\s*coming soon)\.?$/i;
 const genericLineupPattern =
@@ -204,6 +206,26 @@ const sourceLinks = await fetchAll(
   (query) => query.order("updated_at", { ascending: false }),
 );
 const upcomingSourceLinks = sourceLinks.filter((link) => eventIds.has(link.event_id));
+const sourceLinksByEventId = upcomingSourceLinks.reduce((map, link) => {
+  const links = map.get(link.event_id) || [];
+  links.push(link);
+  map.set(link.event_id, links);
+  return map;
+}, new Map());
+
+const hasRecentCanonicalSourceCheck = (eventId) =>
+  (sourceLinksByEventId.get(eventId) || []).some(
+    (link) =>
+      link.status === "active" &&
+      link.canonical_for_updates &&
+      link.last_checked_at &&
+      new Date(link.last_checked_at).toISOString() >= freshnessCutoff,
+  );
+
+const latestCanonicalSourceCheck = (eventId) =>
+  (sourceLinksByEventId.get(eventId) || [])
+    .filter((link) => link.canonical_for_updates && link.last_checked_at)
+    .sort((left, right) => String(right.last_checked_at).localeCompare(String(left.last_checked_at)))[0]?.last_checked_at || "";
 
 const recentRuns = await fetchAll(
   "event_ingestion_runs",
@@ -212,18 +234,27 @@ const recentRuns = await fetchAll(
   20,
 );
 
-const issueRows = visibleEvents.map((event) => ({
-  event,
-  missingLineup: isMissingLineup(event),
-  weakLineup: isWeakLineup(event),
-  genericLineup: isGenericLineup(event),
-  missingUrl: isMissingUrl(event),
-  genericUrl: isGenericUrl(event),
-  spotlightUrl: isSpotlightUrl(event),
-  ticketingUrl: isTicketingUrl(event),
-  officialUrl: isOfficialUrl(event),
-  eventUrlDateMismatch: hasEventUrlDateMismatch(event),
-}));
+const issueRows = visibleEvents.map((event) => {
+  const missingLineup = isMissingLineup(event);
+  const weakLineup = isWeakLineup(event);
+  const genericLineup = isGenericLineup(event);
+  const recentCanonicalSourceCheck = hasRecentCanonicalSourceCheck(event.id);
+  return {
+    event,
+    missingLineup,
+    weakLineup,
+    genericLineup,
+    missingUrl: isMissingUrl(event),
+    genericUrl: isGenericUrl(event),
+    spotlightUrl: isSpotlightUrl(event),
+    ticketingUrl: isTicketingUrl(event),
+    officialUrl: isOfficialUrl(event),
+    eventUrlDateMismatch: hasEventUrlDateMismatch(event),
+    recentCanonicalSourceCheck,
+    completeLineupNeedsFreshnessCheck: !missingLineup && !weakLineup && !genericLineup && !recentCanonicalSourceCheck,
+    latestCanonicalSourceCheck: latestCanonicalSourceCheck(event.id),
+  };
+});
 
 const issueCounts = {
   total_visible_upcoming: visibleEvents.length,
@@ -236,6 +267,8 @@ const issueCounts = {
   ticketing_urls: issueRows.filter((row) => row.ticketingUrl).length,
   official_urls: issueRows.filter((row) => row.officialUrl).length,
   event_url_date_mismatches: issueRows.filter((row) => row.eventUrlDateMismatch).length,
+  recent_canonical_source_checks: issueRows.filter((row) => row.recentCanonicalSourceCheck).length,
+  complete_lineups_needing_freshness_check: issueRows.filter((row) => row.completeLineupNeedsFreshnessCheck).length,
   fourvenues_rows_in_scope: events.length - visibleEvents.length,
 };
 
@@ -257,6 +290,7 @@ for (const row of issueRows) {
     spotlight_urls: 0,
     ticketing_urls: 0,
     date_mismatched_urls: 0,
+    freshness_check_needed: 0,
   };
   const flags = [
     row.missingLineup,
@@ -267,6 +301,7 @@ for (const row of issueRows) {
     row.spotlightUrl,
     row.ticketingUrl,
     row.eventUrlDateMismatch,
+    row.completeLineupNeedsFreshnessCheck,
   ];
   if (flags.some(Boolean)) current.issues += 1;
   if (row.missingLineup) current.missing_lineups += 1;
@@ -277,6 +312,7 @@ for (const row of issueRows) {
   if (row.spotlightUrl) current.spotlight_urls += 1;
   if (row.ticketingUrl) current.ticketing_urls += 1;
   if (row.eventUrlDateMismatch) current.date_mismatched_urls += 1;
+  if (row.completeLineupNeedsFreshnessCheck) current.freshness_check_needed += 1;
   venueIssueCounts[venue] = current;
 }
 
@@ -329,6 +365,7 @@ const issueFlagsFor = (row) =>
     row.spotlightUrl && "spotlight_url",
     row.ticketingUrl && "ticketing_url",
     row.eventUrlDateMismatch && `url_date_mismatch:${dateMismatchFor(row.event.date, row.event.event_url).join("/")}`,
+    row.completeLineupNeedsFreshnessCheck && "lineup_freshness_check_needed",
   ].filter(Boolean);
 
 const rowPriority = (row) =>
@@ -339,7 +376,8 @@ const rowPriority = (row) =>
   (row.genericUrl ? 4 : 0) +
   (row.ticketingUrl ? 3 : 0) +
   (row.spotlightUrl ? 2 : 0) +
-  (row.eventUrlDateMismatch ? 12 : 0);
+  (row.eventUrlDateMismatch ? 12 : 0) +
+  (row.completeLineupNeedsFreshnessCheck ? 6 : 0);
 
 const sampleRows = (filterFn, limit = 25) =>
   issueRows
@@ -353,6 +391,7 @@ const sampleRows = (filterFn, limit = 25) =>
       issueFlagsFor(row).join(", "),
       normalizeWhitespace(row.event.lineup_details).slice(0, 120),
       row.event.event_url || "",
+      row.latestCanonicalSourceCheck || "",
     ]);
 
 const runRows = recentRuns.map((run) => [
@@ -402,6 +441,7 @@ const report = [
   "",
   `Generated: ${new Date().toISOString()}`,
   `Window: ${startDate} to ${endDate}`,
+  `Freshness check: canonical source must have been rendered within the last ${freshnessDays} days (since ${freshnessCutoff.slice(0, 10)}).`,
   "",
   "## Public Event Audit",
   "",
@@ -413,7 +453,7 @@ const report = [
   "## Top Venue Repair Board",
   "",
   formatTable(
-    ["Venue", "Issue Rows", "Missing Lineups", "Weak/TBA", "Generic Lineups", "Missing URLs", "Generic URLs", "Spotlight URLs", "Ticketing URLs", "Date-Mismatched URLs"],
+    ["Venue", "Issue Rows", "Missing Lineups", "Weak/TBA", "Generic Lineups", "Freshness Needed", "Missing URLs", "Generic URLs", "Spotlight URLs", "Ticketing URLs", "Date-Mismatched URLs"],
     Object.entries(venueIssueCounts)
       .sort((left, right) => right[1].issues - left[1].issues || left[0].localeCompare(right[0]))
       .slice(0, 20)
@@ -423,6 +463,7 @@ const report = [
         counts.missing_lineups,
         counts.weak_lineups,
         counts.generic_lineups,
+        counts.freshness_check_needed,
         counts.missing_urls,
         counts.generic_urls,
         counts.spotlight_urls,
@@ -451,28 +492,37 @@ const report = [
   "### Missing URL Rows",
   "",
   formatTable(
-    ["Date", "Venue", "Event", "Flags", "Current Lineup", "Current URL"],
+    ["Date", "Venue", "Event", "Flags", "Current Lineup", "Current URL", "Latest Canonical Check"],
     sampleRows((row) => row.missingUrl, 40),
   ),
   "",
   "### Missing Or Weak Lineup Rows",
   "",
   formatTable(
-    ["Date", "Venue", "Event", "Flags", "Current Lineup", "Current URL"],
+    ["Date", "Venue", "Event", "Flags", "Current Lineup", "Current URL", "Latest Canonical Check"],
     sampleRows((row) => row.missingLineup || row.weakLineup, 40),
+  ),
+  "",
+  "### Complete-Looking Lineups Needing Freshness Check",
+  "",
+  "Rows here may look complete, but do not yet have a recent rendered canonical source check. They should be rechecked before being treated as finished.",
+  "",
+  formatTable(
+    ["Date", "Venue", "Event", "Flags", "Current Lineup", "Current URL", "Latest Canonical Check"],
+    sampleRows((row) => row.completeLineupNeedsFreshnessCheck, 40),
   ),
   "",
   "### Spotlight Or Generic URL Rows",
   "",
   formatTable(
-    ["Date", "Venue", "Event", "Flags", "Current Lineup", "Current URL"],
+    ["Date", "Venue", "Event", "Flags", "Current Lineup", "Current URL", "Latest Canonical Check"],
     sampleRows((row) => row.spotlightUrl || row.genericUrl, 40),
   ),
   "",
   "### Ticketing URL Rows",
   "",
   formatTable(
-    ["Date", "Venue", "Event", "Flags", "Current Lineup", "Current URL"],
+    ["Date", "Venue", "Event", "Flags", "Current Lineup", "Current URL", "Latest Canonical Check"],
     sampleRows((row) => row.ticketingUrl, 40),
   ),
   "",
@@ -481,7 +531,7 @@ const report = [
   "Rows here have an explicit date embedded in the current public event URL that does not match the event date. These should be queued for official URL repair before lineup automation trusts the link.",
   "",
   formatTable(
-    ["Date", "Venue", "Event", "Flags", "Current Lineup", "Current URL"],
+    ["Date", "Venue", "Event", "Flags", "Current Lineup", "Current URL", "Latest Canonical Check"],
     sampleRows((row) => row.eventUrlDateMismatch, 40),
   ),
   "",
