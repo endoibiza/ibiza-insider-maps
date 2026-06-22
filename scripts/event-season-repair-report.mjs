@@ -110,8 +110,17 @@ const extractDateTokensFromUrl = (value) => {
   }
 
   for (const match of decoded.matchAll(/\b(\d{1,2})[-_/](\d{1,2})[-_/](20\d{2})\b/g)) {
-    const date = toIsoDate(match[3], match[2], match[1]);
-    if (date) dates.add(date);
+    const firstNumber = Number(match[1]);
+    const secondNumber = Number(match[2]);
+    const dmyDate = toIsoDate(match[3], match[2], match[1]);
+    if (dmyDate) dates.add(dmyDate);
+
+    // Some official venue slugs use month-day-year, e.g. chinois.com/events/defected-7-2-2026.
+    // Keep both interpretations when ambiguous so exact event-date matches are not falsely queued.
+    if (firstNumber <= 12 && secondNumber <= 31) {
+      const mdyDate = toIsoDate(match[3], match[1], match[2]);
+      if (mdyDate) dates.add(mdyDate);
+    }
   }
 
   for (const match of decoded.matchAll(/\b(\d{1,2})(?:st|nd|rd|th)?[-_\s]*(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)[-_\s]*(20\d{2})\b/gi)) {

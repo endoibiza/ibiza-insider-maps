@@ -57,6 +57,8 @@ const dateTokensFor = (dateValue) => {
     `${year}-${month}-${day}`,
     `${day}-${month}-${year}`,
     `${Number(day)}-${Number(month)}-${year}`,
+    `${month}-${day}-${year}`,
+    `${Number(month)}-${Number(day)}-${year}`,
   ];
 };
 

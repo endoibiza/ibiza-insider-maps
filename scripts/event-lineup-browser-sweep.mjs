@@ -87,6 +87,10 @@ const dateTokensFor = (dateValue) => {
     `${monthShort} ${dayNumeric}, ${year}`,
     `${monthLong} ${dayNumeric}, ${year}`,
     `${day2}/${month2}/${year}`,
+    `${day2}-${month2}-${year}`,
+    `${dayNumeric}-${Number(month2)}-${year}`,
+    `${month2}-${day2}-${year}`,
+    `${Number(month2)}-${dayNumeric}-${year}`,
   ].map((token) => token.toLowerCase());
 };
 
