@@ -47,6 +47,9 @@ const canReplaceEventUrl = (value) => {
   return !normalized || genericUrlPattern.test(normalized);
 };
 
+const sameLineup = (left, right) =>
+  normalizeWhitespace(left).toLowerCase() === normalizeWhitespace(right).toLowerCase();
+
 const supabase = createClient(requiredEnv("SUPABASE_URL"), requiredEnv("SUPABASE_SERVICE_ROLE_KEY"));
 const apply = String(process.env.APPLY || "false").toLowerCase() === "true";
 const limit = Math.min(Math.max(Number(process.env.LIMIT || 10), 1), 50);
@@ -76,6 +79,7 @@ if (eventsError) throw eventsError;
 const eventById = new Map((events || []).map((event) => [event.id, event]));
 const approved = [];
 const rejected = [];
+const alreadyApplied = [];
 
 for (const proposal of proposals || []) {
   const event = eventById.get(proposal.event_id);
@@ -91,13 +95,39 @@ for (const proposal of proposals || []) {
   if (!proposal.source_url) reasons.push("missing_source_url");
 
   if (reasons.length) {
-    rejected.push({ proposal, event, reasons });
+    if (event && reasons.length === 1 && reasons[0] === "current_lineup_not_weak" && sameLineup(event.lineup_details, proposal.proposed_lineup_details)) {
+      alreadyApplied.push({ proposal, event });
+    } else {
+      rejected.push({ proposal, event, reasons });
+    }
   } else {
     approved.push({ proposal, event });
   }
 }
 
 let updated = 0;
+let markedApplied = 0;
+if (apply && alreadyApplied.length) {
+  for (const { proposal } of alreadyApplied) {
+    const { error: proposalError } = await supabase
+      .from("event_lineup_review_queue")
+      .update({
+        approval_status: "applied",
+        applied_at: new Date().toISOString(),
+        raw_metadata: {
+          ...(proposal.raw_metadata || {}),
+          safe_apply_batch: true,
+          safe_apply_noop: true,
+          safe_apply_batch_at: new Date().toISOString(),
+        },
+      })
+      .eq("id", proposal.id);
+
+    if (proposalError) throw proposalError;
+    markedApplied += 1;
+  }
+}
+
 if (apply && approved.length) {
   for (const { proposal, event } of approved) {
     const updatePayload = {
@@ -139,8 +169,10 @@ console.log(JSON.stringify({
   source_type: sourceType,
   proposals_checked: proposals?.length || 0,
   approved_for_apply: approved.length,
+  already_applied_noop: alreadyApplied.length,
   rejected_by_guard: rejected.length,
   public_rows_updated: updated,
+  proposals_marked_applied_noop: markedApplied,
   approved_samples: approved.map(({ proposal, event }) => ({
     date: event.date,
     venue: event.venue,
@@ -148,6 +180,13 @@ console.log(JSON.stringify({
     proposed_lineup_details: normalizeWhitespace(proposal.proposed_lineup_details),
     source_url: proposal.source_url,
     would_replace_event_url: canReplaceEventUrl(event.event_url),
+  })),
+  already_applied_samples: alreadyApplied.map(({ proposal, event }) => ({
+    date: event.date,
+    venue: event.venue,
+    event_name: event.event_name,
+    proposed_lineup_details: normalizeWhitespace(proposal.proposed_lineup_details),
+    source_url: proposal.source_url,
   })),
   rejected_samples: rejected.slice(0, 20).map(({ proposal, event, reasons }) => ({
     date: event?.date || proposal.event_date,

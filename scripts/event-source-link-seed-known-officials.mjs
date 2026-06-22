@@ -121,31 +121,51 @@ for (const seed of officialSeeds) {
     upserts = rows.length;
 
     if (seed.proposedLineup) {
-      const proposalRows = await Promise.all(eligibleEvents.map(async (event) => ({
-        event_id: event.id,
-        source_url: seed.sourceUrl,
-        source_type: seed.sourceType || "official_venue",
-        event_name: event.event_name,
-        event_date: event.date,
-        venue: event.venue,
-        current_lineup_details: event.lineup_details,
-        proposed_lineup_details: seed.proposedLineup,
-        proposal_hash: await sha256(`${event.id}|${seed.sourceUrl}|${seed.proposedLineup}`),
-        lineup_confidence: seed.confidence,
-        approval_status: "pending",
-        raw_metadata: {
-          seeded_from: "known_official_source_seed",
-          seed_label: seed.label,
-          quality_gate: "seeded_exact_public_source_pending_review",
-          evidence_note: "Exact date-specific public source verified before staging. Public ibiza_events row not updated by this workflow.",
-        },
-      })));
+      const proposalRows = [];
 
-      const { error: proposalError } = await supabase
-        .from("event_lineup_review_queue")
-        .upsert(proposalRows, { onConflict: "event_id,source_url,proposal_hash" });
+      for (const event of eligibleEvents) {
+        const proposalHash = await sha256(`${event.id}|${seed.sourceUrl}|${seed.proposedLineup}`);
+        const { data: existingProposals, error: existingProposalError } = await supabase
+          .from("event_lineup_review_queue")
+          .select("id,approval_status")
+          .eq("event_id", event.id)
+          .eq("source_url", seed.sourceUrl)
+          .eq("proposal_hash", proposalHash)
+          .limit(1);
 
-      if (proposalError) throw proposalError;
+        if (existingProposalError) throw existingProposalError;
+
+        const existingStatus = existingProposals?.[0]?.approval_status;
+        if (["applied", "rejected"].includes(existingStatus)) continue;
+
+        proposalRows.push({
+          event_id: event.id,
+          source_url: seed.sourceUrl,
+          source_type: seed.sourceType || "official_venue",
+          event_name: event.event_name,
+          event_date: event.date,
+          venue: event.venue,
+          current_lineup_details: event.lineup_details,
+          proposed_lineup_details: seed.proposedLineup,
+          proposal_hash: proposalHash,
+          lineup_confidence: seed.confidence,
+          approval_status: existingStatus || "pending",
+          raw_metadata: {
+            seeded_from: "known_official_source_seed",
+            seed_label: seed.label,
+            quality_gate: "seeded_exact_public_source_pending_review",
+            evidence_note: "Exact date-specific public source verified before staging. Public ibiza_events row not updated by this workflow.",
+          },
+        });
+      }
+
+      if (proposalRows.length) {
+        const { error: proposalError } = await supabase
+          .from("event_lineup_review_queue")
+          .upsert(proposalRows, { onConflict: "event_id,source_url,proposal_hash" });
+
+        if (proposalError) throw proposalError;
+      }
       proposalUpserts = proposalRows.length;
     }
   }
