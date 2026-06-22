@@ -34,6 +34,7 @@ const eventDescriptionLineupPattern =
   /\b(?:live at|at)\s+\[?[^\]]+\]?\s+ibiza\s+on\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),?\s+\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*(?:\s+20\d{2})?/i;
 const embeddedRoomLabelPattern =
   /(?:^|[,•·]\s*)(?:[✹⏾*]\s*)?(?:theatre|club room|main room|club|terrace|garden|wild corner|the bunker|room|stage)\s*\([^)]+\)/i;
+const genericOfficialIndexPattern = /\/(?:events?|calendar|agenda|whats-on)\/?$/i;
 
 const dateTokensFor = (dateValue) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateValue || ""))) return [];
@@ -110,6 +111,13 @@ const todayInMadrid = () =>
 const rejectionReason = (proposal, event, todayMadrid) => {
   if (proposal.event_date && proposal.event_date < todayMadrid) return "rejected_past_event";
   if (shouldReject(proposal.proposed_lineup_details)) return "rejected_generic_or_partial_lineup";
+  if (
+    proposal.source_type === "official_venue" &&
+    genericOfficialIndexPattern.test(String(proposal.source_url || "")) &&
+    !sourceUrlMatchesDate(proposal.source_url, proposal.event_date)
+  ) {
+    return "rejected_generic_official_index_without_date";
+  }
   if (proposal.source_type === "ticketing_platform" && !sourceUrlMatchesDate(proposal.source_url, proposal.event_date)) {
     return "rejected_source_url_date_mismatch";
   }
