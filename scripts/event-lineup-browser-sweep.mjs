@@ -283,6 +283,7 @@ const venueSearchTokens = venuePattern
   .split("|")
   .map((token) => normalizeWhitespace(token).replace(/[.*+?^${}()[\]\\]/g, ""))
   .filter((token) => token.length >= 2);
+const sweepSourceTypes = ["official_venue", "fourvenues_public", "ibiza_spotlight", "ticketing_platform", "municipal"];
 
 const { data: run, error: runError } = await supabase
   .from("event_ingestion_runs")
@@ -312,7 +313,7 @@ try {
     .select("*")
     .gte("date", startDate)
     .lte("date", endDate)
-    .in("source_type", ["official_venue", "ibiza_spotlight", "ticketing_platform", "municipal"]);
+    .in("source_type", sweepSourceTypes);
 
   if (venueSearchTokens.length) {
     targetQuery = targetQuery.or(
@@ -328,11 +329,74 @@ try {
     .limit(limit);
 
   if (targetError) throw targetError;
-  const targets = venueRegex
+  const viewTargets = venueRegex
     ? (rawTargets || []).filter((target) =>
       venueRegex.test(target.venue || "") || venueRegex.test(target.event_name || ""),
     )
     : rawTargets || [];
+
+  const targetsByKey = new Map(viewTargets.map((target) => [`${target.event_id}|${target.source_url || target.event_url}`, target]));
+
+  if (targetsByKey.size < limit) {
+    let sourceLinkQuery = supabase
+      .from("event_source_links")
+      .select("id,event_id,source_url,source_type,canonical_for_updates,confidence,status")
+      .in("source_type", sweepSourceTypes)
+      .in("status", ["active", "needs_review"])
+      .order("confidence", { ascending: false })
+      .limit(Math.min(300, limit * 8));
+
+    const { data: sourceLinks, error: sourceLinkError } = await sourceLinkQuery;
+    if (sourceLinkError) throw sourceLinkError;
+
+    const sourceEventIds = [...new Set((sourceLinks || []).map((link) => link.event_id).filter(Boolean))];
+    const sourceEvents = [];
+    for (let index = 0; index < sourceEventIds.length; index += 100) {
+      const batch = sourceEventIds.slice(index, index + 100);
+      const { data: events, error: eventsError } = await supabase
+        .from("ibiza_events")
+        .select("id,notion_page_id,event_name,date,venue,event_series,event_url,lineup_details,status,fourvenues_event_id,source_missing_since")
+        .in("id", batch)
+        .gte("date", startDate)
+        .lte("date", endDate)
+        .neq("status", "Cancelled")
+        .is("source_missing_since", null);
+      if (eventsError) throw eventsError;
+      sourceEvents.push(...(events || []));
+    }
+
+    const eventById = new Map(sourceEvents.map((event) => [event.id, event]));
+    for (const link of sourceLinks || []) {
+      const event = eventById.get(link.event_id);
+      if (!event) continue;
+      if (event.fourvenues_event_id || String(event.notion_page_id || "").startsWith("fourvenues:")) continue;
+      if (venueRegex && !venueRegex.test(event.venue || "") && !venueRegex.test(event.event_name || "")) continue;
+      const key = `${event.id}|${link.source_url}`;
+      if (targetsByKey.has(key)) continue;
+      targetsByKey.set(key, {
+        event_id: event.id,
+        notion_page_id: event.notion_page_id,
+        event_name: event.event_name,
+        date: event.date,
+        venue: event.venue,
+        event_series: event.event_series,
+        event_url: event.event_url,
+        lineup_details: event.lineup_details,
+        status: event.status,
+        fourvenues_event_id: event.fourvenues_event_id,
+        source_missing_since: event.source_missing_since,
+        source_link_id: link.id,
+        source_url: link.source_url,
+        source_type: link.source_type,
+        canonical_for_updates: link.canonical_for_updates,
+        issue_type: "explicit_source_link_check",
+        priority: 5,
+      });
+      if (targetsByKey.size >= limit) break;
+    }
+  }
+
+  const targets = [...targetsByKey.values()].slice(0, limit);
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ userAgent: "Ibiza Maps Browser Lineup Sweep/1.0 (+https://ibiza-maps.com)" });
