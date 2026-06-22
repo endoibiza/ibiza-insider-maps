@@ -184,6 +184,14 @@ GitHub Actions requirements:
 Use `docs/hermes-openclaw-event-sweep-packets.md` as the bounded worker contract.
 Use `docs/ibiza-events-agent-replacement-snapshot.md` as the preserved old-agent behavior contract.
 
+### Sweep Learnings: 2026-06-22 Customer-Facing Push
+
+- Generic official index pages such as `/events/`, `/calendar`, `/agenda`, and `/whats-on` are useful for discovery and snapshots, but they must not auto-publish lineups unless the proposal is tied to the exact event date.
+- Ticket package or VIP benefit text is not lineup text. Reject phrases such as `drinks included`, `entry via`, `private terrace`, `valet parking`, and `table service`.
+- `auto_safe` still requires review. The 528 Ibiza wave proved that a real named lineup can be attached to the wrong dates when extracted from a broad venue page.
+- UNVRS ticketing pages can expose package benefits where the lineup parser expects artists. Keep these staged/rejected until an official or trusted source provides named artists.
+- Browser sweeps that stage zero proposals are still useful when they refresh canonical source checks; they should be reported as freshness coverage, not treated as completed lineup repair.
+
 Allowed:
 
 - read official sources and render JavaScript-heavy pages;
