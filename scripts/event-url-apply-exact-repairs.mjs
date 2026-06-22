@@ -208,6 +208,34 @@ const exactRepairs = [
       "Rows currently point at the generic Ibiza Rocks events calendar rather than the official series page.",
     ],
   },
+  {
+    label: "Pantheøn at Cova Santa official recurring series page",
+    date: null,
+    venue: "Cova Santa",
+    eventNamePattern: "%Pantheøn%",
+    replacementUrl: "https://covasanta.com/en/parties/pantheon",
+    sourceType: "official_venue",
+    confidence: 0.88,
+    currentUrlPolicy: "generic_or_missing",
+    evidence: [
+      "Official Cova Santa Pantheøn page covers the Sunday residency and describes the 2026 concept.",
+      "Rows currently have no public event URL.",
+    ],
+  },
+  {
+    label: "RUMORS at Cova Santa official recurring series page",
+    date: null,
+    venue: "Cova Santa",
+    eventNamePattern: "%RUMORS%",
+    replacementUrl: "https://covasanta.com/en/parties/rumors",
+    sourceType: "official_venue",
+    confidence: 0.88,
+    currentUrlPolicy: "generic_or_missing",
+    evidence: [
+      "Official Cova Santa Rumors page covers the Guy Gerber & Friends residency.",
+      "Rows currently have no public event URL.",
+    ],
+  },
 ];
 
 const supabase = createClient(requiredEnv("SUPABASE_URL"), requiredEnv("SUPABASE_SERVICE_ROLE_KEY"));
