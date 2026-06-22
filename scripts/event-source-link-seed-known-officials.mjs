@@ -54,6 +54,20 @@ const officialSeeds = [
     confidence: 0.9,
     proposedLineup: "Hannah Wants, Jodie Harsh, Oscar Colorado, Rampini",
   },
+  {
+    label: "Club Chinois Defected 25 Jun 2026 public Fourvenues page",
+    venue: "Club Chinois",
+    eventNamePattern: "%Defected%",
+    sourceUrl:
+      "https://site.fourvenues.com/en/chinois-ibiza/events/defected-dj-ez-hannah-wants-james-poole-murphys-law-phill-de-janeiro-25-06-2026-XYVE",
+    startDate: "2026-06-25",
+    endDate: "2026-06-25",
+    sourceType: "fourvenues_public",
+    sourceKey: "known-fourvenues-public-source-seed",
+    monetizable: false,
+    confidence: 0.9,
+    proposedLineup: "DJ EZ, Hannah Wants, James Poole, Murphy's Law, Phill De Janeiro",
+  },
 ];
 
 const summary = [];
