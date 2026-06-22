@@ -65,6 +65,19 @@ const sourceUrlMatchesDate = (sourceUrl, dateValue) => {
   return dateTokensFor(dateValue).some((token) => lower.includes(token.toLowerCase()));
 };
 
+const todayInMadrid = () => {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Madrid",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const part = (type) => parts.find((item) => item.type === type)?.value;
+  return `${part("year")}-${part("month")}-${part("day")}`;
+};
+
+const todayMadrid = todayInMadrid();
+
 const canEnrichCurrentLineup = (proposal, event) => {
   const current = normalizeWhitespace(event?.lineup_details);
   const proposed = normalizeWhitespace(proposal.proposed_lineup_details);
@@ -117,6 +130,7 @@ for (const proposal of proposals || []) {
   if (event?.fourvenues_event_id || String(event?.notion_page_id || "").startsWith("fourvenues:")) reasons.push("fourvenues_owned_row");
   if (String(event?.status || "").toLowerCase() === "cancelled") reasons.push("cancelled_event");
   if (event?.source_missing_since) reasons.push("source_missing_event");
+  if (event?.date && event.date < todayMadrid) reasons.push("past_event");
   if (event?.date !== proposal.event_date) reasons.push("date_mismatch");
   if (event?.venue !== proposal.venue) reasons.push("venue_mismatch");
   if (!isSafeProposedLineup(proposal.proposed_lineup_details)) reasons.push("unsafe_proposed_lineup");
@@ -199,6 +213,7 @@ console.log(JSON.stringify({
   apply,
   source_type: sourceType,
   allow_superset_enrichment: allowSupersetEnrichment,
+  today_madrid: todayMadrid,
   proposals_checked: proposals?.length || 0,
   approved_for_apply: approved.length,
   already_applied_noop: alreadyApplied.length,
