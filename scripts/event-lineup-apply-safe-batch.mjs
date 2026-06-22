@@ -155,6 +155,23 @@ const sourceUrlMatchesDate = (sourceUrl, dateValue) => {
   return dateTokensFor(dateValue).some((token) => lower.includes(token.toLowerCase()));
 };
 
+const exactDateSeededProposal = (proposal, event) =>
+  Boolean(
+    event?.date &&
+      proposal?.raw_metadata?.event_date === event.date &&
+      /known[-_](?:official|fourvenues|shotgun|ticketing)|known-official-ticketing/i.test(
+        String(
+          proposal?.raw_metadata?.source_key ||
+            proposal?.raw_metadata?.seeded_from ||
+            proposal?.raw_metadata?.seed_label ||
+            "",
+        ),
+      ),
+  );
+
+const proposalSourceMatchesDate = (proposal, event) =>
+  sourceUrlMatchesDate(proposal?.source_url, event?.date) || exactDateSeededProposal(proposal, event);
+
 const todayInMadrid = () => {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Europe/Madrid",
@@ -175,7 +192,7 @@ const canEnrichCurrentLineup = (proposal, event) => {
   if (!current || !proposed || sameLineup(current, proposed)) return false;
   if (!["official_venue", "fourvenues_public"].includes(proposal.source_type)) return false;
   if (Number(proposal.lineup_confidence || 0) < 0.9) return false;
-  if (!sourceUrlMatchesDate(proposal.source_url, event?.date)) return false;
+  if (!proposalSourceMatchesDate(proposal, event)) return false;
   if (current.includes(",") || current.length > 80) return false;
   if (proposed.length <= current.length + 5) return false;
   return proposed.toLowerCase().includes(current.toLowerCase());
@@ -188,7 +205,7 @@ const canRefreshExactDateLineup = (proposal, event) => {
   if (!current || !proposed || sameLineup(current, proposed)) return false;
   if (!["official_venue", "fourvenues_public", "ticketing_platform"].includes(proposal.source_type)) return false;
   if (Number(proposal.lineup_confidence || 0) < 0.9) return false;
-  if (!sourceUrlMatchesDate(proposal.source_url, event?.date)) return false;
+  if (!proposalSourceMatchesDate(proposal, event)) return false;
   return true;
 };
 
@@ -236,7 +253,7 @@ for (const proposal of proposals || []) {
   if (event?.date !== proposal.event_date) reasons.push("date_mismatch");
   if (event?.venue !== proposal.venue) reasons.push("venue_mismatch");
   if (!isSafeProposedLineup(proposal.proposed_lineup_details)) reasons.push("unsafe_proposed_lineup");
-  if (proposal.source_type === "ticketing_platform" && !sourceUrlMatchesDate(proposal.source_url, event?.date)) {
+  if (proposal.source_type === "ticketing_platform" && !proposalSourceMatchesDate(proposal, event)) {
     reasons.push("source_url_date_mismatch");
   }
   const canApplyRefresh = allowExactDateRefresh && canRefreshExactDateLineup(proposal, event);

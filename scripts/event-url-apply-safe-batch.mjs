@@ -65,6 +65,18 @@ const sourceUrlMatchesDate = (sourceUrl, dateValue) => {
   return dateTokensFor(dateValue).some((token) => lower.includes(token.toLowerCase()));
 };
 
+const exactDateSourceKeyPattern = /^(known-(?:official|fourvenues-public|official-ticketing|shotgun)-source-seed|known-official-ticketing-source-seed)$/;
+
+const sourceLinkMatchesDate = (link, event) => {
+  if (sourceUrlMatchesDate(link?.source_url, event?.date)) return true;
+  const metadataDate = link?.raw_metadata?.event_date;
+  return Boolean(
+    event?.date &&
+      metadataDate === event.date &&
+      exactDateSourceKeyPattern.test(String(link?.source_key || "")),
+  );
+};
+
 const monthLookup = {
   january: "01",
   jan: "01",
@@ -175,7 +187,7 @@ const minConfidence = Number(process.env.MIN_CONFIDENCE || 0.88);
 
 const { data: links, error } = await supabase
   .from("event_source_links")
-  .select("id,event_id,source_url,source_type,source_label,confidence,status,canonical_for_updates,raw_metadata")
+  .select("id,event_id,source_url,source_type,source_key,source_label,confidence,status,canonical_for_updates,raw_metadata")
   .in("source_type", sourceTypes)
   .eq("status", "active")
   .eq("canonical_for_updates", true)
@@ -211,7 +223,7 @@ for (const link of links || []) {
   if (!canReplaceEventUrl(event?.event_url, event?.date)) reasons.push("event_url_not_missing_generic_or_date_mismatched");
   if (!isValidUrl(link.source_url)) reasons.push("invalid_source_url");
   if (!["official_venue", "fourvenues_public", "ticketing_platform"].includes(link.source_type)) reasons.push("unsupported_source_type");
-  if (!sourceUrlMatchesDate(link.source_url, event?.date)) reasons.push("source_url_date_mismatch");
+  if (!sourceLinkMatchesDate(link, event)) reasons.push("source_url_date_mismatch");
 
   if (reasons.length) {
     rejected.push({ link, event, reasons });
