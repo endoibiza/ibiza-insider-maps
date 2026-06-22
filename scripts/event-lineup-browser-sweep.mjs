@@ -28,6 +28,7 @@ const stripHtml = (value) =>
 
 const sanitizeLineup = (value, fallback = "") => {
   const cleaned = stripHtml(value)
+    .replace(/\s*[•·]\s*/g, ", ")
     .replace(/\b(?:Theatre|Club|Garden|Terrace|Main Room|The Bunker|Wild Comet|Room|Stage)(?:\s*\([^)]+\))?\s*:\s*/gi, "")
     .replace(/\bSpecial\s+Guests?\s*:\s*/gi, "")
     .replace(/\s*,?\s*\+\s*(?:TBA|TBC)\b\.?/gi, "")
@@ -47,6 +48,8 @@ const eventListingLineupPattern =
   /\bon\s+\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+20\d{2},?\s+\d{1,2}:\d{2}\b/i;
 const eventDescriptionLineupPattern =
   /\b(?:live at|at)\s+\[?[^\]]+\]?\s+ibiza\s+on\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),?\s+\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*(?:\s+20\d{2})?/i;
+const embeddedRoomLabelPattern =
+  /(?:^|[,•·]\s*)(?:[✹⏾*]\s*)?(?:theatre|club room|main room|club|terrace|garden|wild corner|the bunker|room|stage)\s*\([^)]+\)/i;
 const isWeakLineup = (value) => {
   const normalized = normalizeWhitespace(value);
   return !normalized || weakLineupPattern.test(normalized) || /\b(agent run|run id|verified on|last verified)\b/i.test(normalized);
@@ -58,7 +61,8 @@ const isGenericLineupProposal = (value) => {
     timeOnlyLineupPattern.test(normalized) ||
     truncatedLineupPattern.test(normalized) ||
     eventListingLineupPattern.test(normalized) ||
-    eventDescriptionLineupPattern.test(normalized);
+    eventDescriptionLineupPattern.test(normalized) ||
+    embeddedRoomLabelPattern.test(normalized);
 };
 
 const textLines = (value) =>

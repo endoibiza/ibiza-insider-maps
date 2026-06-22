@@ -32,10 +32,19 @@ const eventListingLineupPattern =
   /\bon\s+\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+20\d{2},?\s+\d{1,2}:\d{2}\b/i;
 const eventDescriptionLineupPattern =
   /\b(?:live at|at)\s+\[?[^\]]+\]?\s+ibiza\s+on\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),?\s+\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*(?:\s+20\d{2})?/i;
+const embeddedRoomLabelPattern =
+  /(?:^|[,•·]\s*)(?:[✹⏾*]\s*)?(?:theatre|club room|main room|club|terrace|garden|wild corner|the bunker|room|stage)\s*\([^)]+\)/i;
 const genericUrlPattern = /(?:ibiza-spotlight\.com\/(?:night\/events|events\/?$)|\/(?:events|calendar|agenda)\/?$)/i;
 
+const normalizePublicLineup = (value) =>
+  normalizeWhitespace(value)
+    .replace(/\s*[•·]\s*/g, ", ")
+    .replace(/\s*,\s*/g, ", ")
+    .replace(/(?:,\s*){2,}/g, ", ")
+    .replace(/^,\s*|\s*,\s*$/g, "");
+
 const isSafeProposedLineup = (value) => {
-  const normalized = normalizeWhitespace(value);
+  const normalized = normalizePublicLineup(value);
   return Boolean(normalized) &&
     !weakLineupPattern.test(normalized) &&
     !genericLineupPattern.test(normalized) &&
@@ -45,7 +54,8 @@ const isSafeProposedLineup = (value) => {
     !timeOnlyLineupPattern.test(normalized) &&
     !truncatedLineupPattern.test(normalized) &&
     !eventListingLineupPattern.test(normalized) &&
-    !eventDescriptionLineupPattern.test(normalized);
+    !eventDescriptionLineupPattern.test(normalized) &&
+    !embeddedRoomLabelPattern.test(normalized);
 };
 
 const canReplaceCurrentLineup = (value) => {
@@ -59,10 +69,10 @@ const canReplaceEventUrl = (value) => {
 };
 
 const sameLineup = (left, right) =>
-  normalizeWhitespace(left).toLowerCase() === normalizeWhitespace(right).toLowerCase();
+  normalizePublicLineup(left).toLowerCase() === normalizePublicLineup(right).toLowerCase();
 
 const lineupArtistTokens = (value) =>
-  normalizeWhitespace(value)
+  normalizePublicLineup(value)
     .split(/\s*,\s*/)
     .map((item) => item.toLowerCase().replace(/\s+/g, " ").trim())
     .filter(Boolean);
@@ -160,7 +170,7 @@ const todayMadrid = todayInMadrid();
 
 const canEnrichCurrentLineup = (proposal, event) => {
   const current = normalizeWhitespace(event?.lineup_details);
-  const proposed = normalizeWhitespace(proposal.proposed_lineup_details);
+  const proposed = normalizePublicLineup(proposal.proposed_lineup_details);
 
   if (!current || !proposed || sameLineup(current, proposed)) return false;
   if (!["official_venue", "fourvenues_public"].includes(proposal.source_type)) return false;
@@ -173,7 +183,7 @@ const canEnrichCurrentLineup = (proposal, event) => {
 
 const canRefreshExactDateLineup = (proposal, event) => {
   const current = normalizeWhitespace(event?.lineup_details);
-  const proposed = normalizeWhitespace(proposal.proposed_lineup_details);
+  const proposed = normalizePublicLineup(proposal.proposed_lineup_details);
 
   if (!current || !proposed || sameLineup(current, proposed)) return false;
   if (!["official_venue", "fourvenues_public", "ticketing_platform"].includes(proposal.source_type)) return false;
@@ -275,7 +285,7 @@ if (apply && alreadyApplied.length) {
 if (apply && approved.length) {
   for (const { proposal, event } of approved) {
     const updatePayload = {
-      lineup_details: normalizeWhitespace(proposal.proposed_lineup_details),
+      lineup_details: normalizePublicLineup(proposal.proposed_lineup_details),
       last_synced_at: new Date().toISOString(),
     };
     if (canReplaceEventUrl(event.event_url)) updatePayload.event_url = proposal.source_url;
@@ -329,7 +339,7 @@ console.log(JSON.stringify({
     date: event.date,
     venue: event.venue,
     event_name: event.event_name,
-    proposed_lineup_details: normalizeWhitespace(proposal.proposed_lineup_details),
+    proposed_lineup_details: normalizePublicLineup(proposal.proposed_lineup_details),
     source_url: proposal.source_url,
     would_replace_event_url: canReplaceEventUrl(event.event_url),
   })),
@@ -337,7 +347,7 @@ console.log(JSON.stringify({
     date: event.date,
     venue: event.venue,
     event_name: event.event_name,
-    proposed_lineup_details: normalizeWhitespace(proposal.proposed_lineup_details),
+    proposed_lineup_details: normalizePublicLineup(proposal.proposed_lineup_details),
     source_url: proposal.source_url,
   })),
   rejected_samples: rejected.slice(0, 20).map(({ proposal, event, reasons }) => ({
@@ -345,6 +355,6 @@ console.log(JSON.stringify({
     venue: proposal.venue,
     event_name: proposal.event_name,
     reasons,
-    proposed_lineup_details: normalizeWhitespace(proposal.proposed_lineup_details),
+    proposed_lineup_details: normalizePublicLineup(proposal.proposed_lineup_details),
   })),
 }, null, 2));
