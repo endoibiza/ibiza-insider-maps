@@ -7,6 +7,10 @@ on:
         description: Days ahead to audit
         required: false
         default: "180"
+      end_date:
+        description: Optional inclusive end date for full-season audits
+        required: false
+        default: ""
 
 jobs:
   season-repair-report:
@@ -17,6 +21,7 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       WINDOW_DAYS: ${{ inputs.window_days }}
+      END_DATE: ${{ inputs.end_date }}
       OUTPUT_FILE: event-season-repair-report.md
     steps:
       - name: Check out repository
