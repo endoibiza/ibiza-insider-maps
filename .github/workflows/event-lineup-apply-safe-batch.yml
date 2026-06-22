@@ -15,6 +15,10 @@ on:
         description: Maximum proposals to inspect
         required: false
         default: "10"
+      allow_superset_enrichment:
+        description: Allow official/public sources to enrich headliner-only current lineups
+        required: false
+        default: "false"
 
 jobs:
   lineup-apply-safe-batch:
@@ -27,6 +31,7 @@ jobs:
       APPLY: ${{ inputs.apply }}
       SOURCE_TYPE: ${{ inputs.source_type }}
       LIMIT: ${{ inputs.limit }}
+      ALLOW_SUPERSET_ENRICHMENT: ${{ inputs.allow_superset_enrichment }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

@@ -50,10 +50,39 @@ const canReplaceEventUrl = (value) => {
 const sameLineup = (left, right) =>
   normalizeWhitespace(left).toLowerCase() === normalizeWhitespace(right).toLowerCase();
 
+const dateTokensFor = (dateValue) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateValue || ""))) return [];
+  const [year, month, day] = dateValue.split("-");
+  return [
+    `${year}-${month}-${day}`,
+    `${day}-${month}-${year}`,
+    `${Number(day)}-${Number(month)}-${year}`,
+  ];
+};
+
+const sourceUrlMatchesDate = (sourceUrl, dateValue) => {
+  const lower = String(sourceUrl || "").toLowerCase();
+  return dateTokensFor(dateValue).some((token) => lower.includes(token.toLowerCase()));
+};
+
+const canEnrichCurrentLineup = (proposal, event) => {
+  const current = normalizeWhitespace(event?.lineup_details);
+  const proposed = normalizeWhitespace(proposal.proposed_lineup_details);
+
+  if (!current || !proposed || sameLineup(current, proposed)) return false;
+  if (!["official_venue", "fourvenues_public"].includes(proposal.source_type)) return false;
+  if (Number(proposal.lineup_confidence || 0) < 0.9) return false;
+  if (!sourceUrlMatchesDate(proposal.source_url, event?.date)) return false;
+  if (current.includes(",") || current.length > 80) return false;
+  if (proposed.length <= current.length + 5) return false;
+  return proposed.toLowerCase().includes(current.toLowerCase());
+};
+
 const supabase = createClient(requiredEnv("SUPABASE_URL"), requiredEnv("SUPABASE_SERVICE_ROLE_KEY"));
 const apply = String(process.env.APPLY || "false").toLowerCase() === "true";
 const limit = Math.min(Math.max(Number(process.env.LIMIT || 10), 1), 50);
 const sourceType = process.env.SOURCE_TYPE || "fourvenues_public";
+const allowSupersetEnrichment = String(process.env.ALLOW_SUPERSET_ENRICHMENT || "false").toLowerCase() === "true";
 
 const { data: proposals, error } = await supabase
   .from("event_lineup_review_queue")
@@ -91,7 +120,9 @@ for (const proposal of proposals || []) {
   if (event?.date !== proposal.event_date) reasons.push("date_mismatch");
   if (event?.venue !== proposal.venue) reasons.push("venue_mismatch");
   if (!isSafeProposedLineup(proposal.proposed_lineup_details)) reasons.push("unsafe_proposed_lineup");
-  if (!canReplaceCurrentLineup(event?.lineup_details)) reasons.push("current_lineup_not_weak");
+  if (!canReplaceCurrentLineup(event?.lineup_details) && !(allowSupersetEnrichment && canEnrichCurrentLineup(proposal, event))) {
+    reasons.push("current_lineup_not_weak");
+  }
   if (!proposal.source_url) reasons.push("missing_source_url");
 
   if (reasons.length) {
@@ -167,6 +198,7 @@ if (apply && approved.length) {
 console.log(JSON.stringify({
   apply,
   source_type: sourceType,
+  allow_superset_enrichment: allowSupersetEnrichment,
   proposals_checked: proposals?.length || 0,
   approved_for_apply: approved.length,
   already_applied_noop: alreadyApplied.length,
