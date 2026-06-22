@@ -75,6 +75,21 @@ const dateTokensFor = (dateValue) => {
     "november",
     "december",
   ];
+  const monthShortNames = [
+    "",
+    "jan",
+    "feb",
+    "mar",
+    "apr",
+    "may",
+    "jun",
+    "jul",
+    "aug",
+    "sep",
+    "oct",
+    "nov",
+    "dec",
+  ];
   const numericDay = Number(day);
   const numericMonth = Number(month);
   const ordinalSuffix =
@@ -82,6 +97,7 @@ const dateTokensFor = (dateValue) => {
       ? "th"
       : { 1: "st", 2: "nd", 3: "rd" }[numericDay % 10] || "th";
   const monthName = monthNames[numericMonth] || "";
+  const monthShortName = monthShortNames[numericMonth] || "";
   return [
     `${year}-${month}-${day}`,
     `${day}-${month}-${year}`,
@@ -91,6 +107,16 @@ const dateTokensFor = (dateValue) => {
     `${numericDay}${ordinalSuffix}${monthName}${year}`,
     `${numericDay}${monthName}${year}`,
     `${numericDay}-${monthName}-${year}`,
+    `${numericDay}${ordinalSuffix}${monthShortName}${year}`,
+    `${numericDay}${monthShortName}${year}`,
+    `${numericDay}-${monthShortName}-${year}`,
+    ...(monthShortName === "sep"
+      ? [
+        `${numericDay}${ordinalSuffix}sept${year}`,
+        `${numericDay}sept${year}`,
+        `${numericDay}-sept-${year}`,
+      ]
+      : []),
   ];
 };
 
