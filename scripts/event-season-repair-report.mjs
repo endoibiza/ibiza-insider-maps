@@ -106,7 +106,7 @@ const eventIds = new Set(visibleEvents.map((event) => event.id));
 
 const proposals = await fetchAll(
   "event_lineup_review_queue",
-  "id,event_id,event_name,event_date,venue,source_type,source_url,current_lineup_details,proposed_lineup_details,lineup_confidence,approval_status,raw_metadata,created_at",
+  "id,event_id,run_id,event_name,event_date,venue,source_type,source_url,current_lineup_details,proposed_lineup_details,lineup_confidence,approval_status,raw_metadata,created_at",
   (query) => query.gte("event_date", startDate).lte("event_date", endDate).order("created_at", { ascending: false }),
 );
 
@@ -119,7 +119,7 @@ const upcomingSourceLinks = sourceLinks.filter((link) => eventIds.has(link.event
 
 const recentRuns = await fetchAll(
   "event_ingestion_runs",
-  "id,run_type,mode,status,started_at,finished_at,sources_seen,snapshots_inserted,candidates_seen,candidates_inserted,metadata,error_message",
+  "id,run_type,mode,status,started_at,finished_at,sources_seen,snapshots_inserted,candidates_seen,candidates_inserted,source_failures,metadata,error_message",
   (query) => query.order("started_at", { ascending: false }).limit(20),
   20,
 );
@@ -258,6 +258,35 @@ const runRows = recentRuns.map((run) => [
   run.metadata?.venue_pattern || "",
 ]);
 
+const proposalRunIds = new Set(proposals.map((proposal) => proposal.run_id).filter(Boolean));
+const sourceFailureCount = (run) => Array.isArray(run.source_failures) ? run.source_failures.length : 0;
+const browserRuns = recentRuns.filter((run) => run.metadata?.job === "browser_lineup_sweep");
+const browserRunRows = browserRuns.map((run) => [
+  run.started_at,
+  run.status,
+  run.metadata?.venue_pattern || "all venues",
+  run.sources_seen ?? 0,
+  run.snapshots_inserted ?? 0,
+  run.metadata?.proposals_inserted ?? run.candidates_inserted ?? 0,
+  JSON.stringify(run.metadata?.proposal_status_counts || {}),
+  sourceFailureCount(run),
+]);
+const checkedNoProposalRows = browserRuns
+  .filter((run) =>
+    run.status === "completed" &&
+    Number(run.snapshots_inserted || 0) > 0 &&
+    Number(run.metadata?.proposals_inserted ?? run.candidates_inserted ?? 0) === 0 &&
+    !proposalRunIds.has(run.id)
+  )
+  .map((run) => [
+    run.started_at,
+    run.metadata?.venue_pattern || "all venues",
+    run.sources_seen ?? 0,
+    run.snapshots_inserted ?? 0,
+    sourceFailureCount(run),
+    "checked_official_sources_no_clean_lineup_proposal",
+  ]);
+
 const report = [
   "# Ibiza Events Season Repair Report",
   "",
@@ -384,6 +413,24 @@ const report = [
       proposal.raw_metadata?.quality_gate || "rejected",
       normalizeWhitespace(proposal.proposed_lineup_details).slice(0, 180),
     ]),
+  ),
+  "",
+  "## Checked Source Packets",
+  "",
+  "These are recent browser-rendered shadow sweeps. They prove which official/source packets were checked before any public `ibiza_events` write was considered.",
+  "",
+  formatTable(
+    ["Started", "Status", "Venue Pattern", "Targets Checked", "Snapshots", "Proposals", "Proposal Status Counts", "Failures"],
+    browserRunRows,
+  ),
+  "",
+  "### Queued Exceptions: Checked With No Clean Proposal",
+  "",
+  "Rows here were rendered and snapshotted, but no clean public-safe lineup proposal was found. Keep them queued for source-specific parser work or manual review instead of fabricating lineups.",
+  "",
+  formatTable(
+    ["Started", "Venue Pattern", "Targets Checked", "Snapshots", "Failures", "Queue Reason"],
+    checkedNoProposalRows,
   ),
   "",
   "## Duplicate-Looking Public Rows",
