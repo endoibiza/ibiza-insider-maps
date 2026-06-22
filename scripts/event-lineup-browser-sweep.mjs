@@ -37,13 +37,16 @@ const sanitizeLineup = (value, fallback = "") => {
 const weakLineupPattern = /^(tba|tbc|line\s*up\s*tba|to be announced|more tba|coming soon|line\s*up\s*coming soon)\.?$/i;
 const genericLineupPattern =
   /(?:\b(?:resident\s+djs?|special\s+guests?|guest\s+djs?|line\s*up\s+coming\s+soon|coming\s+soon|more\s+(?:artists|names|acts|djs)?\s*(?:tba|soon)?|and\s+more)\b|&\s*more)/i;
+const timeOnlyLineupPattern =
+  /^(?:\d{1,2}|00|30)(?:\s*\([^)]+\)\s*\/\s*\d{1,2}:\d{2}\s*\([^)]+\))?$/i;
+const truncatedLineupPattern = /(?:\.{3}|…)\s*$/;
 const isWeakLineup = (value) => {
   const normalized = normalizeWhitespace(value);
   return !normalized || weakLineupPattern.test(normalized) || /\b(agent run|run id|verified on|last verified)\b/i.test(normalized);
 };
 const isGenericLineupProposal = (value) => {
   const normalized = normalizeWhitespace(value);
-  return !normalized || genericLineupPattern.test(normalized);
+  return !normalized || genericLineupPattern.test(normalized) || timeOnlyLineupPattern.test(normalized) || truncatedLineupPattern.test(normalized);
 };
 
 const textLines = (value) =>
@@ -92,6 +95,7 @@ const isLikelyArtistLine = (line, target) => {
   if (!normalized) return false;
   if (stopLinePattern.test(normalized) || priceLinePattern.test(normalized)) return false;
   if (/^\d{1,2}[:.]\d{2}/.test(normalized) || /\b\d{1,2}:\d{2}\s*[–-]\s*(?:end|\d{1,2}:\d{2})\b/i.test(normalized)) return false;
+  if (timeOnlyLineupPattern.test(normalized)) return false;
   if (roomLabelPattern.test(normalized) || genericFillerLinePattern.test(normalized)) return false;
   if (dateLinePattern.test(normalized)) return false;
   if (overlapScore(normalized, target.event_name) >= 0.75) return false;
