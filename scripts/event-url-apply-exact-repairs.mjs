@@ -99,6 +99,33 @@ const isValidUrl = (value) => {
   }
 };
 
+const isGenericVenueCalendarUrl = (value) =>
+  /(?:ibizarocks\.com\/events\/?$|\/(?:events|calendar|agenda)\/?$)/i.test(normalizeWhitespace(value));
+
+const currentEventUrlNeedsRepair = (repair, event) => {
+  if (repair.currentUrlPolicy === "generic_or_missing") {
+    return !normalizeWhitespace(event.event_url) || isGenericVenueCalendarUrl(event.event_url);
+  }
+
+  return hasUrlDateMismatch(event.date, event.event_url);
+};
+
+const qualityGateFor = (repair) =>
+  repair.currentUrlPolicy === "generic_or_missing"
+    ? "official_recurring_series_url_repair"
+    : "exact_date_mismatch_public_url_repair";
+
+const todayInMadrid = () => {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Madrid",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const part = (type) => parts.find((item) => item.type === type)?.value;
+  return `${part("year")}-${part("month")}-${part("day")}`;
+};
+
 const exactRepairs = [
   {
     label: "Bresh at Amnesia official season page for 4 Jul 2026",
@@ -139,30 +166,80 @@ const exactRepairs = [
       "Previous public URL was a news article whose publication date created a false event URL date mismatch.",
     ],
   },
+  {
+    label: "Nothing New at Ibiza Rocks official recurring series page",
+    date: null,
+    venue: "Ibiza Rocks",
+    eventNamePattern: "%Nothing New%",
+    replacementUrl: "https://www.ibizarocks.com/events/nothing-new/",
+    sourceType: "official_venue",
+    confidence: 0.88,
+    currentUrlPolicy: "generic_or_missing",
+    evidence: [
+      "Official Ibiza Rocks Nothing New page covers the Monday May-September 2026 pool party.",
+      "Rows currently point at the generic Ibiza Rocks events calendar rather than the official series page.",
+    ],
+  },
+  {
+    label: "Ibiza Anthems at Ibiza Rocks official recurring series page",
+    date: null,
+    venue: "Ibiza Rocks",
+    eventNamePattern: "%Ibiza Anthems%",
+    replacementUrl: "https://www.ibizarocks.com/events/ibiza-anthems/",
+    sourceType: "official_venue",
+    confidence: 0.88,
+    currentUrlPolicy: "generic_or_missing",
+    evidence: [
+      "Official Ibiza Rocks Ibiza Anthems page covers the Saturday May-September 2026 pool party.",
+      "Rows currently point at the generic Ibiza Rocks events calendar rather than the official series page.",
+    ],
+  },
+  {
+    label: "R&B Affair at Ibiza Rocks official recurring series page",
+    date: null,
+    venue: "Ibiza Rocks",
+    eventNamePattern: "%R&B Affair%",
+    replacementUrl: "https://www.ibizarocks.com/events/rnb-affair/",
+    sourceType: "official_venue",
+    confidence: 0.88,
+    currentUrlPolicy: "generic_or_missing",
+    evidence: [
+      "Official Ibiza Rocks R&B Affair page covers the Sunday May-September 2026 pool party.",
+      "Rows currently point at the generic Ibiza Rocks events calendar rather than the official series page.",
+    ],
+  },
 ];
 
 const supabase = createClient(requiredEnv("SUPABASE_URL"), requiredEnv("SUPABASE_SERVICE_ROLE_KEY"));
 const apply = String(process.env.APPLY || "false").toLowerCase() === "true";
+const todayMadrid = todayInMadrid();
 
 const approved = [];
 const rejected = [];
 
 for (const repair of exactRepairs) {
-  const { data: events, error } = await supabase
+  let query = supabase
     .from("ibiza_events")
     .select("id,notion_page_id,event_name,date,venue,event_url,lineup_details,status,source_missing_since,fourvenues_event_id")
-    .eq("date", repair.date)
     .eq("venue", repair.venue)
     .ilike("event_name", repair.eventNamePattern)
+    .gte("date", todayMadrid)
     .neq("status", "Cancelled")
     .is("source_missing_since", null);
+
+  if (repair.date) query = query.eq("date", repair.date);
+  if (repair.startDate) query = query.gte("date", repair.startDate);
+  if (repair.endDate) query = query.lte("date", repair.endDate);
+
+  const { data: events, error } = await query;
 
   if (error) throw error;
 
   for (const event of events || []) {
     const reasons = [];
     if (event.fourvenues_event_id || String(event.notion_page_id || "").startsWith("fourvenues:")) reasons.push("fourvenues_owned_row");
-    if (!hasUrlDateMismatch(event.date, event.event_url)) reasons.push("current_event_url_not_date_mismatched");
+    if (repair.date && event.date !== repair.date) reasons.push("date_mismatch");
+    if (!currentEventUrlNeedsRepair(repair, event)) reasons.push("current_event_url_not_repairable");
     if (!isValidUrl(repair.replacementUrl)) reasons.push("invalid_replacement_url");
     if (hasUrlDateMismatch(event.date, repair.replacementUrl)) reasons.push("replacement_url_date_mismatch");
 
@@ -217,7 +294,7 @@ if (apply) {
             repaired_from: event.event_url,
             repaired_at: now,
             evidence: repair.evidence,
-            quality_gate: "exact_date_mismatch_public_url_repair",
+            quality_gate: qualityGateFor(repair),
           },
         },
         { onConflict: "event_id,source_url" },
@@ -230,6 +307,7 @@ if (apply) {
 
 console.log(JSON.stringify({
   apply,
+  today_madrid: todayMadrid,
   repairs_checked: exactRepairs.length,
   approved_for_apply: approved.length,
   rejected_by_guard: rejected.length,
