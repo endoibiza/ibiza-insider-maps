@@ -23,6 +23,7 @@ const genericLineupPattern =
   /(?:\b(?:resident\s+djs?|special\s+guests?|guest\s+djs?|line\s*up\s+coming\s+soon|coming\s+soon|more\s+(?:artists|names|acts|djs)?\s*(?:tba|soon)?|and\s+more)\b|&\s*more|\+\s*(?:tba|tbc)\b)/i;
 const internalMetadataPattern = /\b(agent run|run id|verified on|last verified|last checked|confidence|snapshot id)\b/i;
 const locationNoisePattern = /\bbalearic islands\b/i;
+const ticketTierPattern = /\b(?:early access|entry before|before\s+\d{1,2}[:.]?\d{2}|standard ticket|vip ticket|balcony ticket|general admission|tickets?\s+from)\b/i;
 const timeOnlyLineupPattern =
   /^(?:\d{1,2}|00|30)(?:\s*\([^)]+\)\s*\/\s*\d{1,2}:\d{2}\s*\([^)]+\))?$/i;
 const truncatedLineupPattern = /(?:\.{3}|…)\s*$/;
@@ -35,6 +36,7 @@ const isSafeProposedLineup = (value) => {
     !genericLineupPattern.test(normalized) &&
     !internalMetadataPattern.test(normalized) &&
     !locationNoisePattern.test(normalized) &&
+    !ticketTierPattern.test(normalized) &&
     !timeOnlyLineupPattern.test(normalized) &&
     !truncatedLineupPattern.test(normalized);
 };
