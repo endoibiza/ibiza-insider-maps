@@ -236,6 +236,35 @@ const exactRepairs = [
       "Rows currently have no public event URL.",
     ],
   },
+  {
+    label: "Cocoricò presents GALACTICA at Eden official recurring series page",
+    date: null,
+    venue: "Eden Ibiza",
+    eventNamePattern: "%GALACTICA%",
+    replacementUrl: "https://www.edenibiza.com/galactica/",
+    sourceType: "official_venue",
+    confidence: 0.86,
+    currentUrlPolicy: "generic_or_missing",
+    evidence: [
+      "Official Eden navigation exposes a Galactica series page for the 2026 season.",
+      "Rows currently have no public event URL; date-by-date lineup verification remains a separate fallback-source packet.",
+    ],
+  },
+  {
+    label: "Markus Schulz at Eden official recurring series page",
+    date: null,
+    venue: "Eden Ibiza",
+    eventNamePattern: "%Markus Schulz%",
+    replacementUrl: "https://www.edenibiza.com/markus-schulz/",
+    sourceType: "official_venue",
+    confidence: 0.86,
+    currentUrlPolicy: "generic_or_missing",
+    endDate: "2026-09-17",
+    evidence: [
+      "Official Eden navigation exposes a Markus Schulz series page for the 2026 season.",
+      "Only rows through 2026-09-17 are included because the remaining local row needs date review against published sources.",
+    ],
+  },
 ];
 
 const supabase = createClient(requiredEnv("SUPABASE_URL"), requiredEnv("SUPABASE_SERVICE_ROLE_KEY"));
