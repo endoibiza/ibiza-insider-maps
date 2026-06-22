@@ -19,6 +19,10 @@ on:
         description: Allow official/public sources to enrich headliner-only current lineups
         required: false
         default: "false"
+      allow_exact_date_refresh:
+        description: Allow reviewed exact-date official/ticketing sources to refresh existing lineups
+        required: false
+        default: "false"
 
 jobs:
   lineup-apply-safe-batch:
@@ -32,6 +36,7 @@ jobs:
       SOURCE_TYPE: ${{ inputs.source_type }}
       LIMIT: ${{ inputs.limit }}
       ALLOW_SUPERSET_ENRICHMENT: ${{ inputs.allow_superset_enrichment }}
+      ALLOW_EXACT_DATE_REFRESH: ${{ inputs.allow_exact_date_refresh }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

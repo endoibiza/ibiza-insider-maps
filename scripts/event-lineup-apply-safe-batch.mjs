@@ -125,11 +125,23 @@ const canEnrichCurrentLineup = (proposal, event) => {
   return proposed.toLowerCase().includes(current.toLowerCase());
 };
 
+const canRefreshExactDateLineup = (proposal, event) => {
+  const current = normalizeWhitespace(event?.lineup_details);
+  const proposed = normalizeWhitespace(proposal.proposed_lineup_details);
+
+  if (!current || !proposed || sameLineup(current, proposed)) return false;
+  if (!["official_venue", "fourvenues_public", "ticketing_platform"].includes(proposal.source_type)) return false;
+  if (Number(proposal.lineup_confidence || 0) < 0.9) return false;
+  if (!sourceUrlMatchesDate(proposal.source_url, event?.date)) return false;
+  return true;
+};
+
 const supabase = createClient(requiredEnv("SUPABASE_URL"), requiredEnv("SUPABASE_SERVICE_ROLE_KEY"));
 const apply = String(process.env.APPLY || "false").toLowerCase() === "true";
 const limit = Math.min(Math.max(Number(process.env.LIMIT || 10), 1), 50);
 const sourceType = process.env.SOURCE_TYPE || "fourvenues_public";
 const allowSupersetEnrichment = String(process.env.ALLOW_SUPERSET_ENRICHMENT || "false").toLowerCase() === "true";
+const allowExactDateRefresh = String(process.env.ALLOW_EXACT_DATE_REFRESH || "false").toLowerCase() === "true";
 
 const { data: proposals, error } = await supabase
   .from("event_lineup_review_queue")
@@ -171,7 +183,8 @@ for (const proposal of proposals || []) {
   if (proposal.source_type === "ticketing_platform" && !sourceUrlMatchesDate(proposal.source_url, event?.date)) {
     reasons.push("source_url_date_mismatch");
   }
-  if (!canReplaceCurrentLineup(event?.lineup_details) && !(allowSupersetEnrichment && canEnrichCurrentLineup(proposal, event))) {
+  const canApplyRefresh = allowExactDateRefresh && canRefreshExactDateLineup(proposal, event);
+  if (!canReplaceCurrentLineup(event?.lineup_details) && !(allowSupersetEnrichment && canEnrichCurrentLineup(proposal, event)) && !canApplyRefresh) {
     reasons.push("current_lineup_not_weak");
   }
   if (!proposal.source_url) reasons.push("missing_source_url");
@@ -237,6 +250,11 @@ if (apply && approved.length) {
           ...(proposal.raw_metadata || {}),
           safe_apply_batch: true,
           safe_apply_batch_at: new Date().toISOString(),
+          safe_apply_mode: allowExactDateRefresh && canRefreshExactDateLineup(proposal, event)
+            ? "exact_date_reviewed_refresh"
+            : allowSupersetEnrichment && canEnrichCurrentLineup(proposal, event)
+              ? "superset_enrichment"
+              : "weak_or_blank_replacement",
         },
       })
       .eq("id", proposal.id);
@@ -250,6 +268,7 @@ console.log(JSON.stringify({
   apply,
   source_type: sourceType,
   allow_superset_enrichment: allowSupersetEnrichment,
+  allow_exact_date_refresh: allowExactDateRefresh,
   today_madrid: todayMadrid,
   proposals_checked: proposals?.length || 0,
   approved_for_apply: approved.length,
