@@ -9,6 +9,12 @@ const requiredEnv = (name) => {
 const supabase = createClient(requiredEnv("SUPABASE_URL"), requiredEnv("SUPABASE_SERVICE_ROLE_KEY"));
 const apply = String(process.env.APPLY || "false").toLowerCase() === "true";
 
+const sha256 = async (value) => {
+  const bytes = new TextEncoder().encode(value);
+  const hash = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+};
+
 const officialSeeds = [
   {
     label: "Hï Ibiza CamelPhat Summer of Love 2026",
@@ -33,6 +39,7 @@ const officialSeeds = [
     sourceKey: "known-fourvenues-public-source-seed",
     monetizable: false,
     confidence: 0.9,
+    proposedLineup: "David Penn, Kpd, Oscar Colorado, Sanchez",
   },
   {
     label: "Club Chinois La Troya 21 Sep 2026 public Fourvenues page",
@@ -45,6 +52,7 @@ const officialSeeds = [
     sourceKey: "known-fourvenues-public-source-seed",
     monetizable: false,
     confidence: 0.9,
+    proposedLineup: "Hannah Wants, Jodie Harsh, Oscar Colorado, Rampini",
   },
 ];
 
@@ -69,6 +77,7 @@ for (const seed of officialSeeds) {
   );
 
   let upserts = 0;
+  let proposalUpserts = 0;
   if (apply && eligibleEvents.length) {
     const rows = eligibleEvents.map((event) => ({
       event_id: event.id,
@@ -96,6 +105,35 @@ for (const seed of officialSeeds) {
 
     if (upsertError) throw upsertError;
     upserts = rows.length;
+
+    if (seed.proposedLineup) {
+      const proposalRows = await Promise.all(eligibleEvents.map(async (event) => ({
+        event_id: event.id,
+        source_url: seed.sourceUrl,
+        source_type: seed.sourceType || "official_venue",
+        event_name: event.event_name,
+        event_date: event.date,
+        venue: event.venue,
+        current_lineup_details: event.lineup_details,
+        proposed_lineup_details: seed.proposedLineup,
+        proposal_hash: await sha256(`${event.id}|${seed.sourceUrl}|${seed.proposedLineup}`),
+        lineup_confidence: seed.confidence,
+        approval_status: "pending",
+        raw_metadata: {
+          seeded_from: "known_official_source_seed",
+          seed_label: seed.label,
+          quality_gate: "seeded_exact_public_source_pending_review",
+          evidence_note: "Exact date-specific public source verified before staging. Public ibiza_events row not updated by this workflow.",
+        },
+      })));
+
+      const { error: proposalError } = await supabase
+        .from("event_lineup_review_queue")
+        .upsert(proposalRows, { onConflict: "event_id,source_url,proposal_hash" });
+
+      if (proposalError) throw proposalError;
+      proposalUpserts = proposalRows.length;
+    }
   }
 
   summary.push({
@@ -103,6 +141,7 @@ for (const seed of officialSeeds) {
     source_url: seed.sourceUrl,
     matched_events: eligibleEvents.length,
     upserted_source_links: upserts,
+    upserted_lineup_proposals: proposalUpserts,
     sample_events: eligibleEvents.slice(0, 20).map((event) => ({
       date: event.date,
       venue: event.venue,
