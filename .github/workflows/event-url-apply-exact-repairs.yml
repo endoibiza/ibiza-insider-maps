@@ -1,0 +1,34 @@
+name: Event URL apply exact repairs
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Apply exact guarded public event_url repairs
+        required: false
+        default: "false"
+
+jobs:
+  event-url-apply-exact-repairs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    name: event-url-apply-exact-repairs
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      APPLY: ${{ inputs.apply }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Apply exact URL repairs
+        run: node scripts/event-url-apply-exact-repairs.mjs

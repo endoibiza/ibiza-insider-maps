@@ -1,0 +1,255 @@
+import { createClient } from "@supabase/supabase-js";
+
+const requiredEnv = (name) => {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} is required`);
+  return value;
+};
+
+const normalizeWhitespace = (value) => String(value || "").replace(/\s+/g, " ").trim();
+
+const monthLookup = {
+  january: "01",
+  jan: "01",
+  february: "02",
+  feb: "02",
+  march: "03",
+  mar: "03",
+  april: "04",
+  apr: "04",
+  may: "05",
+  june: "06",
+  jun: "06",
+  july: "07",
+  jul: "07",
+  august: "08",
+  aug: "08",
+  september: "09",
+  sep: "09",
+  sept: "09",
+  october: "10",
+  oct: "10",
+  november: "11",
+  nov: "11",
+  december: "12",
+  dec: "12",
+};
+
+const toIsoDate = (year, month, day) => {
+  const yyyy = String(year || "");
+  const mm = String(month || "").padStart(2, "0");
+  const dd = String(day || "").padStart(2, "0");
+  if (!/^\d{4}$/.test(yyyy) || !/^\d{2}$/.test(mm) || !/^\d{2}$/.test(dd)) return "";
+  if (Number(mm) < 1 || Number(mm) > 12 || Number(dd) < 1 || Number(dd) > 31) return "";
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const extractDateTokensFromUrl = (value) => {
+  const raw = normalizeWhitespace(value);
+  if (!raw) return [];
+
+  const decoded = (() => {
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  })().toLowerCase();
+
+  const dates = new Set();
+
+  for (const match of decoded.matchAll(/\b(20\d{2})[-_/](\d{1,2})[-_/](\d{1,2})\b/g)) {
+    const date = toIsoDate(match[1], match[2], match[3]);
+    if (date) dates.add(date);
+  }
+
+  for (const match of decoded.matchAll(/\b(\d{1,2})[-_/](\d{1,2})[-_/](20\d{2})\b/g)) {
+    const firstNumber = Number(match[1]);
+    const secondNumber = Number(match[2]);
+    const dmyDate = toIsoDate(match[3], match[2], match[1]);
+    if (dmyDate) dates.add(dmyDate);
+    if (firstNumber <= 12 && secondNumber <= 31) {
+      const mdyDate = toIsoDate(match[3], match[1], match[2]);
+      if (mdyDate) dates.add(mdyDate);
+    }
+  }
+
+  for (const match of decoded.matchAll(/\b(\d{1,2})(?:st|nd|rd|th)?[-_\s]*(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)[-_\s]*(20\d{2})\b/gi)) {
+    const month = monthLookup[match[2].toLowerCase()];
+    const date = toIsoDate(match[3], month, match[1]);
+    if (date) dates.add(date);
+  }
+
+  return [...dates];
+};
+
+const hasUrlDateMismatch = (dateValue, urlValue) => {
+  const eventDate = String(dateValue || "");
+  const urlDates = extractDateTokensFromUrl(urlValue);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate) || !urlDates.length) return false;
+  return !urlDates.includes(eventDate);
+};
+
+const isValidUrl = (value) => {
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol);
+  } catch {
+    return false;
+  }
+};
+
+const exactRepairs = [
+  {
+    label: "Bresh at Amnesia official season page for 4 Jul 2026",
+    date: "2026-07-04",
+    venue: "Amnesia Ibiza",
+    eventNamePattern: "%Bresh%",
+    replacementUrl: "https://www.amnesia.es/en/party-info/bresh",
+    sourceType: "official_venue",
+    confidence: 0.86,
+    evidence: [
+      "Official Amnesia Bresh page covers the 2026 Saturday residency.",
+      "Previous public URL carried a 2025 date token despite being attached to the 2026-07-04 row.",
+    ],
+  },
+  {
+    label: "Sonorama Ibiza 2026 official site for Day 1",
+    date: "2026-10-02",
+    venue: "Other",
+    eventNamePattern: "%Sonorama%",
+    replacementUrl: "https://sonoramariberaibiza.es/",
+    sourceType: "official_venue",
+    confidence: 0.9,
+    evidence: [
+      "Official Sonorama Ribera Ibiza site states Cala de Bou, Ibiza, 2 and 3 October 2026.",
+      "Previous public URL was a news article whose publication date created a false event URL date mismatch.",
+    ],
+  },
+  {
+    label: "Sonorama Ibiza 2026 official site for Day 2",
+    date: "2026-10-03",
+    venue: "Other",
+    eventNamePattern: "%Sonorama%",
+    replacementUrl: "https://sonoramariberaibiza.es/",
+    sourceType: "official_venue",
+    confidence: 0.9,
+    evidence: [
+      "Official Sonorama Ribera Ibiza site states Cala de Bou, Ibiza, 2 and 3 October 2026.",
+      "Previous public URL was a news article whose publication date created a false event URL date mismatch.",
+    ],
+  },
+];
+
+const supabase = createClient(requiredEnv("SUPABASE_URL"), requiredEnv("SUPABASE_SERVICE_ROLE_KEY"));
+const apply = String(process.env.APPLY || "false").toLowerCase() === "true";
+
+const approved = [];
+const rejected = [];
+
+for (const repair of exactRepairs) {
+  const { data: events, error } = await supabase
+    .from("ibiza_events")
+    .select("id,notion_page_id,event_name,date,venue,event_url,lineup_details,status,source_missing_since,fourvenues_event_id")
+    .eq("date", repair.date)
+    .eq("venue", repair.venue)
+    .ilike("event_name", repair.eventNamePattern)
+    .neq("status", "Cancelled")
+    .is("source_missing_since", null);
+
+  if (error) throw error;
+
+  for (const event of events || []) {
+    const reasons = [];
+    if (event.fourvenues_event_id || String(event.notion_page_id || "").startsWith("fourvenues:")) reasons.push("fourvenues_owned_row");
+    if (!hasUrlDateMismatch(event.date, event.event_url)) reasons.push("current_event_url_not_date_mismatched");
+    if (!isValidUrl(repair.replacementUrl)) reasons.push("invalid_replacement_url");
+    if (hasUrlDateMismatch(event.date, repair.replacementUrl)) reasons.push("replacement_url_date_mismatch");
+
+    if (reasons.length) {
+      rejected.push({ repair, event, reasons });
+    } else {
+      approved.push({ repair, event });
+    }
+  }
+
+  if (!events?.length) {
+    rejected.push({ repair, event: null, reasons: ["no_matching_event"] });
+  }
+}
+
+let rowsUpdated = 0;
+let sourceLinksUpserted = 0;
+
+if (apply) {
+  for (const { repair, event } of approved) {
+    const now = new Date().toISOString();
+
+    const { error: updateError } = await supabase
+      .from("ibiza_events")
+      .update({
+        event_url: repair.replacementUrl,
+        last_synced_at: now,
+      })
+      .eq("id", event.id)
+      .neq("status", "Cancelled")
+      .is("source_missing_since", null)
+      .is("fourvenues_event_id", null);
+
+    if (updateError) throw updateError;
+    rowsUpdated += 1;
+
+    const { error: linkError } = await supabase
+      .from("event_source_links")
+      .upsert(
+        {
+          event_id: event.id,
+          source_url: repair.replacementUrl,
+          source_type: repair.sourceType,
+          source_key: "exact-public-url-repair",
+          source_label: repair.label,
+          canonical_for_updates: true,
+          monetizable: false,
+          confidence: repair.confidence,
+          last_checked_at: now,
+          status: "active",
+          raw_metadata: {
+            repaired_from: event.event_url,
+            repaired_at: now,
+            evidence: repair.evidence,
+            quality_gate: "exact_date_mismatch_public_url_repair",
+          },
+        },
+        { onConflict: "event_id,source_url" },
+      );
+
+    if (linkError) throw linkError;
+    sourceLinksUpserted += 1;
+  }
+}
+
+console.log(JSON.stringify({
+  apply,
+  repairs_checked: exactRepairs.length,
+  approved_for_apply: approved.length,
+  rejected_by_guard: rejected.length,
+  public_rows_updated: rowsUpdated,
+  source_links_upserted: sourceLinksUpserted,
+  approved_samples: approved.map(({ repair, event }) => ({
+    date: event.date,
+    venue: event.venue,
+    event_name: event.event_name,
+    current_event_url: event.event_url,
+    replacement_url: repair.replacementUrl,
+    label: repair.label,
+  })),
+  rejected_samples: rejected.map(({ repair, event, reasons }) => ({
+    date: event?.date || repair.date,
+    venue: event?.venue || repair.venue,
+    event_name: event?.event_name || repair.eventNamePattern,
+    current_event_url: event?.event_url || null,
+    replacement_url: repair.replacementUrl,
+    label: repair.label,
+    reasons,
+  })),
+}, null, 2));
