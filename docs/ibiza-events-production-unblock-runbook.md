@@ -191,6 +191,9 @@ Use `docs/ibiza-events-agent-replacement-snapshot.md` as the preserved old-agent
 - `auto_safe` still requires review. The 528 Ibiza wave proved that a real named lineup can be attached to the wrong dates when extracted from a broad venue page.
 - UNVRS ticketing pages can expose package benefits where the lineup parser expects artists. Keep these staged/rejected until an official or trusted source provides named artists.
 - Browser sweeps that stage zero proposals are still useful when they refresh canonical source checks; they should be reported as freshness coverage, not treated as completed lineup repair.
+- 528 Ibiza official pages can leave older date-specific URLs as `404` while the current season data lives on the official `/events/` calendar or public Fourvenues pages. Use exact-date metadata when the official calendar is the best available fallback, and do not treat that as a lineup source unless the rendered block clearly exposes named artists for that date.
+- Public Fourvenues pages may show useful event facts now, but `web.fourvenues.com`/`site.fourvenues.com` can present bot checks in browser sweeps. Treat public Fourvenues evidence as non-monetized staging only until Channel Manager API access confirms approved organizations and events.
+- Club Chinois date-specific official pages can render residency/booking copy without date-specific artist lineups. If a Chinois sweep stages zero proposals after refreshing snapshots, route La Troya/Defected rows to exact public Fourvenues source discovery or API waitlist instead of fabricating from residency copy.
 
 Allowed:
 
