@@ -27,6 +27,8 @@ const ticketTierPattern = /\b(?:early access|entry before|before\s+\d{1,2}[:.]?\
 const timeOnlyLineupPattern =
   /^(?:\d{1,2}|00|30)(?:\s*\([^)]+\)\s*\/\s*\d{1,2}:\d{2}\s*\([^)]+\))?$/i;
 const truncatedLineupPattern = /(?:\.{3}|…)\s*$/;
+const eventListingLineupPattern =
+  /\bon\s+\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+20\d{2},?\s+\d{1,2}:\d{2}\b/i;
 const genericUrlPattern = /(?:ibiza-spotlight\.com\/(?:night\/events|events\/?$)|\/(?:events|calendar|agenda)\/?$)/i;
 
 const isSafeProposedLineup = (value) => {
@@ -38,7 +40,8 @@ const isSafeProposedLineup = (value) => {
     !locationNoisePattern.test(normalized) &&
     !ticketTierPattern.test(normalized) &&
     !timeOnlyLineupPattern.test(normalized) &&
-    !truncatedLineupPattern.test(normalized);
+    !truncatedLineupPattern.test(normalized) &&
+    !eventListingLineupPattern.test(normalized);
 };
 
 const canReplaceCurrentLineup = (value) => {

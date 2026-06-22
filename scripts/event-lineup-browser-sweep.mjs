@@ -42,13 +42,19 @@ const genericLineupPattern =
 const timeOnlyLineupPattern =
   /^(?:\d{1,2}|00|30)(?:\s*\([^)]+\)\s*\/\s*\d{1,2}:\d{2}\s*\([^)]+\))?$/i;
 const truncatedLineupPattern = /(?:\.{3}|…)\s*$/;
+const eventListingLineupPattern =
+  /\bon\s+\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+20\d{2},?\s+\d{1,2}:\d{2}\b/i;
 const isWeakLineup = (value) => {
   const normalized = normalizeWhitespace(value);
   return !normalized || weakLineupPattern.test(normalized) || /\b(agent run|run id|verified on|last verified)\b/i.test(normalized);
 };
 const isGenericLineupProposal = (value) => {
   const normalized = normalizeWhitespace(value);
-  return !normalized || genericLineupPattern.test(normalized) || timeOnlyLineupPattern.test(normalized) || truncatedLineupPattern.test(normalized);
+  return !normalized ||
+    genericLineupPattern.test(normalized) ||
+    timeOnlyLineupPattern.test(normalized) ||
+    truncatedLineupPattern.test(normalized) ||
+    eventListingLineupPattern.test(normalized);
 };
 
 const textLines = (value) =>
