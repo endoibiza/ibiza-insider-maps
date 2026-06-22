@@ -200,6 +200,9 @@ Use `docs/ibiza-events-agent-replacement-snapshot.md` as the preserved old-agent
 - Amnesia ticketing workflow: `sales.ticketing.cm.com` pages are valid official/ticketing sources for Amnesia date-specific rows. Apply named artist lineups only when the ticketing page exposes real artists; otherwise use the page for URL repair and leave TBA/series copy intact.
 - Cova Santa workflow: official residency pages such as `/en/parties/piv`, `/rumors`, and `/pantheon` are better canonical links than Ibiza Spotlight for recurring rows, but they often do not publish date-specific artist lineups. Use them for official URL/source coverage, not automatic lineup completion.
 - Ibiza Rocks workflow: recurring official pages often publish resident/party descriptions rather than named weekly lineups. Keep those rows queued for freshness instead of rewriting resident-DJ copy into fake completeness.
+- Pikes exact-page workflow: if a Pikes row's official URL/slug names a different event than the public `event_name` or `lineup_details`, the official exact-date page wins. Preserve the slug and Mike's Pick, but repair public name/lineup text and strip `& more`, `special guests`, and resident-DJ filler unless named artists are actually published.
+- Amnesia ticketing workflow: CM.com official ticketing pages can expose named artists in plain text. Use them for exact-date lineup repairs, strip room labels and generic `+ More TBA` / `special guests`, and leave Bresh/Rememberland rows as honest unpublished-lineup rows when the official ticketing page confirms the event but exposes no artists.
+- 528 Ibiza workflow: the official `/events/` calendar is the highest-yield source for 528 lineups, even when individual old `/event/...` pages are 404 and short Fourvenues links are bot-checked. Match by exact date + event title, keep existing ticket/Fourvenues links for checkout, and use the official 528 calendar as canonical source evidence for named lineups.
 
 Allowed:
 
