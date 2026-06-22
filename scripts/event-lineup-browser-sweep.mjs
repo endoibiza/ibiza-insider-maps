@@ -30,6 +30,7 @@ const sanitizeLineup = (value, fallback = "") => {
   const cleaned = stripHtml(value)
     .replace(/\b(?:Theatre|Club|Garden|Terrace|Main Room|The Bunker|Wild Comet|Room|Stage)(?:\s*\([^)]+\))?\s*:\s*/gi, "")
     .replace(/\bSpecial\s+Guests?\s*:\s*/gi, "")
+    .replace(/\s*,?\s*\+\s*(?:TBA|TBC)\b\.?/gi, "")
     .replace(/\s*\((?:verified|updated)\s+[^)]*\)/gi, "")
     .replace(/\b(?:agent run|run id|verified on|last verified)\s*[:#-]?\s*[\w:-]+/gi, "");
   return normalizeWhitespace(cleaned || fallback).slice(0, 750);
@@ -37,7 +38,7 @@ const sanitizeLineup = (value, fallback = "") => {
 
 const weakLineupPattern = /^(tba|tbc|line\s*up\s*tba|to be announced|more tba|coming soon|line\s*up\s*coming soon)\.?$/i;
 const genericLineupPattern =
-  /(?:\b(?:resident\s+djs?|special\s+guests?|guest\s+djs?|line\s*up\s+coming\s+soon|coming\s+soon|more\s+(?:artists|names|acts|djs)?\s*(?:tba|soon)?|and\s+more)\b|&\s*more)/i;
+  /(?:\b(?:resident\s+djs?|special\s+guests?|guest\s+djs?|line\s*up\s+coming\s+soon|coming\s+soon|more\s+(?:artists|names|acts|djs)?\s*(?:tba|soon)?|and\s+more)\b|&\s*more|\+\s*(?:tba|tbc)\b)/i;
 const timeOnlyLineupPattern =
   /^(?:\d{1,2}|00|30)(?:\s*\([^)]+\)\s*\/\s*\d{1,2}:\d{2}\s*\([^)]+\))?$/i;
 const truncatedLineupPattern = /(?:\.{3}|…)\s*$/;
@@ -102,6 +103,7 @@ const isLikelyArtistLine = (line, target) => {
   if (/^\d{1,2}[:.]\d{2}/.test(normalized) || /\b\d{1,2}:\d{2}\s*[–-]\s*(?:end|\d{1,2}:\d{2})\b/i.test(normalized)) return false;
   if (timeOnlyLineupPattern.test(normalized)) return false;
   if (roomLabelPattern.test(normalized) || genericFillerLinePattern.test(normalized)) return false;
+  if (/\bbalearic islands\b/i.test(normalized)) return false;
   if (dateLinePattern.test(normalized)) return false;
   if (overlapScore(normalized, target.event_name) >= 0.75) return false;
   if (overlapScore(normalized, target.venue || "") >= 0.75) return false;
@@ -456,7 +458,10 @@ try {
       const { proposed } = extraction;
       if (!proposed || isWeakLineup(proposed) || proposed === normalizeWhitespace(target.lineup_details || "")) continue;
 
-      const confidence = Math.min(0.95, 0.82 + (target.source_type === "official_venue" ? 0.08 : 0.03));
+      const confidence = Math.min(
+        0.95,
+        0.82 + (["official_venue", "ticketing_platform"].includes(target.source_type) ? 0.08 : 0.03),
+      );
       const isGenericProposal = isGenericLineupProposal(proposed);
       const approvalStatus = isGenericProposal
         ? "rejected"

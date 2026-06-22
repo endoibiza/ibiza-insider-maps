@@ -20,8 +20,9 @@ const normalizeWhitespace = (value) => decodeHtmlEntities(value).replace(/\s+/g,
 
 const weakLineupPattern = /^(tba|tbc|line\s*up\s*tba|lineup\s*tba|to be announced|more tba|coming soon|line\s*up\s*coming soon)[.!…]*$/i;
 const genericLineupPattern =
-  /(?:\b(?:resident\s+djs?|special\s+guests?|guest\s+djs?|line\s*up\s+coming\s+soon|coming\s+soon|more\s+(?:artists|names|acts|djs)?\s*(?:tba|soon)?|and\s+more)\b|&\s*more)/i;
+  /(?:\b(?:resident\s+djs?|special\s+guests?|guest\s+djs?|line\s*up\s+coming\s+soon|coming\s+soon|more\s+(?:artists|names|acts|djs)?\s*(?:tba|soon)?|and\s+more)\b|&\s*more|\+\s*(?:tba|tbc)\b)/i;
 const internalMetadataPattern = /\b(agent run|run id|verified on|last verified|last checked|confidence|snapshot id)\b/i;
+const locationNoisePattern = /\bbalearic islands\b/i;
 const timeOnlyLineupPattern =
   /^(?:\d{1,2}|00|30)(?:\s*\([^)]+\)\s*\/\s*\d{1,2}:\d{2}\s*\([^)]+\))?$/i;
 const truncatedLineupPattern = /(?:\.{3}|…)\s*$/;
@@ -33,6 +34,7 @@ const shouldReject = (value) => {
     weakLineupPattern.test(normalized) ||
     genericLineupPattern.test(normalized) ||
     internalMetadataPattern.test(normalized) ||
+    locationNoisePattern.test(normalized) ||
     timeOnlyLineupPattern.test(normalized) ||
     truncatedLineupPattern.test(normalized)
   );

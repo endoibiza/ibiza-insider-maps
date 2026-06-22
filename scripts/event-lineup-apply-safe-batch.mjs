@@ -20,8 +20,9 @@ const normalizeWhitespace = (value) => decodeHtmlEntities(value).replace(/\s+/g,
 
 const weakLineupPattern = /(?:^|\b)(tba|tbc|line\s*-?\s*up\s*tba|lineup\s*tba|to be announced|lineup not yet posted)(?:\b|$)/i;
 const genericLineupPattern =
-  /(?:\b(?:resident\s+djs?|special\s+guests?|guest\s+djs?|line\s*up\s+coming\s+soon|coming\s+soon|more\s+(?:artists|names|acts|djs)?\s*(?:tba|soon)?|and\s+more)\b|&\s*more)/i;
+  /(?:\b(?:resident\s+djs?|special\s+guests?|guest\s+djs?|line\s*up\s+coming\s+soon|coming\s+soon|more\s+(?:artists|names|acts|djs)?\s*(?:tba|soon)?|and\s+more)\b|&\s*more|\+\s*(?:tba|tbc)\b)/i;
 const internalMetadataPattern = /\b(agent run|run id|verified on|last verified|last checked|confidence|snapshot id)\b/i;
+const locationNoisePattern = /\bbalearic islands\b/i;
 const timeOnlyLineupPattern =
   /^(?:\d{1,2}|00|30)(?:\s*\([^)]+\)\s*\/\s*\d{1,2}:\d{2}\s*\([^)]+\))?$/i;
 const truncatedLineupPattern = /(?:\.{3}|…)\s*$/;
@@ -33,6 +34,7 @@ const isSafeProposedLineup = (value) => {
     !weakLineupPattern.test(normalized) &&
     !genericLineupPattern.test(normalized) &&
     !internalMetadataPattern.test(normalized) &&
+    !locationNoisePattern.test(normalized) &&
     !timeOnlyLineupPattern.test(normalized) &&
     !truncatedLineupPattern.test(normalized);
 };
@@ -161,6 +163,9 @@ for (const proposal of proposals || []) {
   if (event?.date !== proposal.event_date) reasons.push("date_mismatch");
   if (event?.venue !== proposal.venue) reasons.push("venue_mismatch");
   if (!isSafeProposedLineup(proposal.proposed_lineup_details)) reasons.push("unsafe_proposed_lineup");
+  if (proposal.source_type === "ticketing_platform" && !sourceUrlMatchesDate(proposal.source_url, event?.date)) {
+    reasons.push("source_url_date_mismatch");
+  }
   if (!canReplaceCurrentLineup(event?.lineup_details) && !(allowSupersetEnrichment && canEnrichCurrentLineup(proposal, event))) {
     reasons.push("current_lineup_not_weak");
   }
