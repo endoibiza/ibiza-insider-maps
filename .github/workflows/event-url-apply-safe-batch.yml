@@ -1,0 +1,49 @@
+name: Event URL apply safe batch
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Apply guarded public ibiza_events event_url updates
+        required: false
+        default: "false"
+      source_types:
+        description: Comma-separated source types to apply
+        required: false
+        default: "official_venue,fourvenues_public"
+      min_confidence:
+        description: Minimum source-link confidence
+        required: false
+        default: "0.88"
+      limit:
+        description: Maximum source links to inspect
+        required: false
+        default: "20"
+
+jobs:
+  event-url-apply-safe-batch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    name: event-url-apply-safe-batch
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      APPLY: ${{ inputs.apply }}
+      SOURCE_TYPES: ${{ inputs.source_types }}
+      MIN_CONFIDENCE: ${{ inputs.min_confidence }}
+      LIMIT: ${{ inputs.limit }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Apply safe event URL batch
+        run: node scripts/event-url-apply-safe-batch.mjs
