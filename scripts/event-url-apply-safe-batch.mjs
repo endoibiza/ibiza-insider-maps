@@ -26,12 +26,37 @@ const isValidUrl = (value) => {
 const dateTokensFor = (dateValue) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateValue || ""))) return [];
   const [year, month, day] = dateValue.split("-");
+  const monthNames = [
+    "",
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+  ];
+  const numericDay = Number(day);
+  const numericMonth = Number(month);
+  const ordinalSuffix =
+    numericDay % 100 >= 11 && numericDay % 100 <= 13
+      ? "th"
+      : { 1: "st", 2: "nd", 3: "rd" }[numericDay % 10] || "th";
+  const monthName = monthNames[numericMonth] || "";
   return [
     `${year}-${month}-${day}`,
     `${day}-${month}-${year}`,
     `${Number(day)}-${Number(month)}-${year}`,
     `${month}-${day}-${year}`,
     `${Number(month)}-${Number(day)}-${year}`,
+    `${numericDay}${ordinalSuffix}${monthName}${year}`,
+    `${numericDay}${monthName}${year}`,
+    `${numericDay}-${monthName}-${year}`,
   ];
 };
 
