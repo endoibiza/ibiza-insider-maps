@@ -50,6 +50,8 @@ const eventDescriptionLineupPattern =
   /\b(?:live at|at)\s+\[?[^\]]+\]?\s+ibiza\s+on\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),?\s+\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*(?:\s+20\d{2})?/i;
 const embeddedRoomLabelPattern =
   /(?:^|[,•·]\s*)(?:[✹⏾*]\s*)?(?:theatre|club room|main room|club|terrace|garden|wild corner|the bunker|room|stage)\s*\([^)]+\)/i;
+const ticketBenefitPattern =
+  /\b(?:drinks?\s+included|entry\s+via|access\s+to\s+(?:private\s+)?terrace|private\s+terrace|valet\s+parking|vip\s+terrace|vip\s+area|table\s+service)\b/i;
 const isWeakLineup = (value) => {
   const normalized = normalizeWhitespace(value);
   return !normalized || weakLineupPattern.test(normalized) || /\b(agent run|run id|verified on|last verified)\b/i.test(normalized);
@@ -62,7 +64,8 @@ const isGenericLineupProposal = (value) => {
     truncatedLineupPattern.test(normalized) ||
     eventListingLineupPattern.test(normalized) ||
     eventDescriptionLineupPattern.test(normalized) ||
-    embeddedRoomLabelPattern.test(normalized);
+    embeddedRoomLabelPattern.test(normalized) ||
+    ticketBenefitPattern.test(normalized);
 };
 
 const stripTitlePrefixFromLineupCandidate = (candidate, target) => {
@@ -95,7 +98,7 @@ const stopLinePattern =
 const labelledLineupPattern = /^(?:line\s*-?\s*up|lineup|artists?|djs?)$/i;
 const roomLabelPattern =
   /^(?:theatre|club room|main room|terrace|garden|wild corner|the bunker|room|stage)(?:\s+(?:artcore|beatport(?:\s+live)?|all night long))?$/i;
-const priceLinePattern = /(?:€|early access|entry before|before\s+\d{1,2}[:.]?\d{2}|standard ticket|vip ticket|vip experience|vip access|vip table|vip upgrade|balcony ticket|general admission|tickets?\s+from|drinks?\s+package|water\s+pack|discount|meet\s*&?\s*greet)/i;
+const priceLinePattern = /(?:€|early access|entry before|before\s+\d{1,2}[:.]?\d{2}|standard ticket|vip ticket|vip experience|vip access|vip table|vip upgrade|balcony ticket|general admission|tickets?\s+from|drinks?\s+(?:package|included)|water\s+pack|discount|meet\s*&?\s*greet|entry\s+via|private\s+terrace|valet\s+parking)/i;
 const genericFillerLinePattern = /^(?:more artists? tba|more names? tba|special guests?|guest djs?|resident djs?|coming soon|line\s*up\s*coming soon|tba|to be announced)[.!…]*$/i;
 const dateLinePattern =
   /^(?:(?:mon|tue|wed|thu|fri|sat|sun)(?:day)?[,]?\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{1,2},?\s+20\d{2}$/i;

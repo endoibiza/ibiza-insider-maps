@@ -24,7 +24,7 @@ const genericLineupPattern =
   /(?:\b(?:resident\s+djs?|special\s+guests?|guest\s+djs?|line\s*up\s+coming\s+soon|coming\s+soon|more\s+(?:artists|names|acts|djs)?\s*(?:tba|soon)?|and\s+more)\b|&\s*more|\+\s*(?:tba|tbc)\b)/i;
 const internalMetadataPattern = /\b(agent run|run id|verified on|last verified|last checked|confidence|snapshot id)\b/i;
 const locationNoisePattern = /\bbalearic islands\b/i;
-const ticketTierPattern = /\b(?:early access|entry before|before\s+\d{1,2}[:.]?\d{2}|standard ticket|vip ticket|vip experience|vip access|vip table|vip upgrade|balcony ticket|general admission|tickets?\s+from|drinks?\s+package|water\s+pack|discount|meet\s*&?\s*greet)\b/i;
+const ticketTierPattern = /\b(?:early access|entry before|before\s+\d{1,2}[:.]?\d{2}|standard ticket|vip ticket|vip experience|vip access|vip table|vip upgrade|balcony ticket|general admission|tickets?\s+from|drinks?\s+(?:package|included)|water\s+pack|discount|meet\s*&?\s*greet|entry\s+via|access\s+to\s+(?:private\s+)?terrace|private\s+terrace|valet\s+parking|table\s+service)\b/i;
 const timeOnlyLineupPattern =
   /^(?:\d{1,2}|00|30)(?:\s*\([^)]+\)\s*\/\s*\d{1,2}:\d{2}\s*\([^)]+\))?$/i;
 const truncatedLineupPattern = /(?:\.{3}|…)\s*$/;

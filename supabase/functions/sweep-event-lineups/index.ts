@@ -440,7 +440,7 @@ const buildSourceForTarget = (target: SweepTarget, sourceUrl: string): EventSour
 const weakLineupPattern = /^(tba|tbc|line\s*up\s*tba|to be announced|more tba|coming soon|line\s*up\s*coming soon)\.?$/i;
 const internalNoisePattern = /\b(agent run|run id|verified on|last verified)\b/i;
 const genericLineupPattern =
-  /(?:\b(?:resident\s+djs?|special\s+guests?|guest\s+djs?|line\s*up\s+coming\s+soon|coming\s+soon|more\s+(?:artists|names|acts|djs)?\s*(?:tba|soon)?|and\s+more)\b|&\s*more)/i;
+  /(?:\b(?:resident\s+djs?|special\s+guests?|guest\s+djs?|line\s*up\s+coming\s+soon|coming\s+soon|more\s+(?:artists|names|acts|djs)?\s*(?:tba|soon)?|and\s+more|drinks?\s+(?:package|included)|entry\s+via|access\s+to\s+(?:private\s+)?terrace|private\s+terrace|valet\s+parking|table\s+service)\b|&\s*more)/i;
 
 export const isWeakLineupDetails = (value: string | null | undefined) => {
   const normalized = normalizeWhitespace(value || "");
