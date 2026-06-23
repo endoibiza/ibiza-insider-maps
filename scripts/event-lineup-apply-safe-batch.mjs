@@ -22,6 +22,9 @@ const weakLineupPattern =
   /(?:^|\b)(tba|tbc|artists?\s*tba|line\s*-?\s*up\s*tba|lineup\s*tba|to be announced|lineup not yet posted)(?:\b|$)/i;
 const genericLineupPattern =
   /(?:\b(?:resident\s+djs?|special\s+guests?|guest\s+djs?|line\s*up\s+coming\s+soon|coming\s+soon|more\s+(?:artists|names|acts|djs)?\s*(?:tba|soon)?|and\s+more)\b|&\s*more|\+\s*(?:tba|tbc)\b)/i;
+const partialLineupPattern = /(?:&\s*more|\+\s*(?:more\s*)?(?:tba|tbc)|\bmore\s+(?:tba|soon)\b)\s*$/i;
+const unsafePartialLineupPattern =
+  /\b(?:resident\s+djs?|special\s+guests?|guest\s+djs?|secret\s+djs?|unannounced|line\s*up\s+coming\s+soon|coming\s+soon)\b/i;
 const internalMetadataPattern = /\b(agent run|run id|verified on|last verified|last checked|confidence|snapshot id)\b/i;
 const locationNoisePattern = /\bbalearic islands\b/i;
 const ticketTierPattern = /\b(?:early access|entry before|before\s+\d{1,2}[:.]?\d{2}|standard ticket|vip ticket|vip experience|vip access|vip table|vip upgrade|balcony ticket|general admission|tickets?\s+from|drinks?\s+(?:package|included)|water\s+pack|discount|meet\s*&?\s*greet|entry\s+via|access\s+to\s+(?:private\s+)?terrace|private\s+terrace|valet\s+parking|table\s+service)\b/i;
@@ -43,11 +46,46 @@ const normalizePublicLineup = (value) =>
     .replace(/(?:,\s*){2,}/g, ", ")
     .replace(/^,\s*|\s*,\s*$/g, "");
 
+const normalizePartialPublicLineup = (value) => {
+  const normalized = normalizePublicLineup(value)
+    .replace(/\s*,?\s*&\s*more(?:\s*tba|\s*soon)?\s*$/i, "")
+    .replace(/\s*,?\s*\+\s*(?:more\s*)?(?:tba|tbc)\s*$/i, "")
+    .replace(/\s*,?\s*more\s+(?:tba|soon)\s*$/i, "")
+    .replace(/^,\s*|\s*,\s*$/g, "")
+    .trim();
+
+  return normalized ? `${normalized} (+ more TBA)` : "";
+};
+
 const isSafeProposedLineup = (value) => {
   const normalized = normalizePublicLineup(value);
   return Boolean(normalized) &&
     !weakLineupPattern.test(normalized) &&
     !genericLineupPattern.test(normalized) &&
+    !internalMetadataPattern.test(normalized) &&
+    !locationNoisePattern.test(normalized) &&
+    !ticketTierPattern.test(normalized) &&
+    !timeOnlyLineupPattern.test(normalized) &&
+    !truncatedLineupPattern.test(normalized) &&
+    !eventListingLineupPattern.test(normalized) &&
+    !eventDescriptionLineupPattern.test(normalized) &&
+    !embeddedRoomLabelPattern.test(normalized);
+};
+
+const isSafePartialProposedLineup = (value) => {
+  const normalized = normalizePublicLineup(value);
+  const partial = normalizePartialPublicLineup(value);
+  const artistTokens = partial
+    .replace(/\(\+ more TBA\)$/i, "")
+    .split(/\s*,\s*/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return Boolean(partial) &&
+    partialLineupPattern.test(normalized) &&
+    artistTokens.length >= 1 &&
+    artistTokens.every((token) => token.length >= 2) &&
+    !unsafePartialLineupPattern.test(normalized) &&
     !internalMetadataPattern.test(normalized) &&
     !locationNoisePattern.test(normalized) &&
     !ticketTierPattern.test(normalized) &&
@@ -221,19 +259,26 @@ const limit = Math.min(Math.max(Number(process.env.LIMIT || 10), 1), 50);
 const sourceType = process.env.SOURCE_TYPE || "fourvenues_public";
 const allowSupersetEnrichment = String(process.env.ALLOW_SUPERSET_ENRICHMENT || "false").toLowerCase() === "true";
 const allowExactDateRefresh = String(process.env.ALLOW_EXACT_DATE_REFRESH || "false").toLowerCase() === "true";
+const allowPartialSourceBacked = String(process.env.ALLOW_PARTIAL_SOURCE_BACKED || "false").toLowerCase() === "true";
+const venuePattern = normalizeWhitespace(process.env.VENUE_PATTERN || "");
+const venueRegex = venuePattern ? new RegExp(venuePattern, "i") : null;
 
 const { data: proposals, error } = await supabase
   .from("event_lineup_review_queue")
   .select("id,event_id,event_name,event_date,venue,source_url,source_type,current_lineup_details,proposed_lineup_details,lineup_confidence,approval_status,raw_metadata")
   .eq("source_type", sourceType)
-  .in("approval_status", ["pending", "auto_safe"])
+  .in("approval_status", allowPartialSourceBacked ? ["pending", "auto_safe", "rejected"] : ["pending", "auto_safe"])
   .gte("lineup_confidence", 0.9)
   .order("event_date", { ascending: true })
-  .limit(limit);
+  .limit(venueRegex ? Math.min(limit * 10, 500) : limit);
 
 if (error) throw error;
 
-const eventIds = [...new Set((proposals || []).map((proposal) => proposal.event_id).filter(Boolean))];
+const filteredProposals = (proposals || [])
+  .filter((proposal) => !venueRegex || venueRegex.test(proposal.venue || "") || venueRegex.test(proposal.event_name || ""))
+  .slice(0, limit);
+
+const eventIds = [...new Set(filteredProposals.map((proposal) => proposal.event_id).filter(Boolean))];
 const { data: events, error: eventsError } = eventIds.length
   ? await supabase
     .from("ibiza_events")
@@ -247,8 +292,9 @@ const eventById = new Map((events || []).map((event) => [event.id, event]));
 const approved = [];
 const rejected = [];
 const alreadyApplied = [];
+const approvedKeys = new Set();
 
-for (const proposal of proposals || []) {
+for (const proposal of filteredProposals) {
   const event = eventById.get(proposal.event_id);
   const reasons = [];
   if (!event) reasons.push("missing_event");
@@ -258,12 +304,19 @@ for (const proposal of proposals || []) {
   if (event?.date && event.date < todayMadrid) reasons.push("past_event");
   if (event?.date !== proposal.event_date) reasons.push("date_mismatch");
   if (event?.venue !== proposal.venue) reasons.push("venue_mismatch");
-  if (!isSafeProposedLineup(proposal.proposed_lineup_details)) reasons.push("unsafe_proposed_lineup");
+  const canApplyPartial = Boolean(
+    allowPartialSourceBacked &&
+      ["official_venue", "fourvenues_public", "ticketing_platform"].includes(proposal.source_type) &&
+      proposalSourceMatchesDate(proposal, event) &&
+      canReplaceCurrentLineup(event?.lineup_details) &&
+      isSafePartialProposedLineup(proposal.proposed_lineup_details),
+  );
+  if (!isSafeProposedLineup(proposal.proposed_lineup_details) && !canApplyPartial) reasons.push("unsafe_proposed_lineup");
   if (proposal.source_type === "ticketing_platform" && !proposalSourceMatchesDate(proposal, event)) {
     reasons.push("source_url_date_mismatch");
   }
   const canApplyRefresh = allowExactDateRefresh && canRefreshExactDateLineup(proposal, event);
-  if (!canReplaceCurrentLineup(event?.lineup_details) && !(allowSupersetEnrichment && canEnrichCurrentLineup(proposal, event)) && !canApplyRefresh) {
+  if (!canReplaceCurrentLineup(event?.lineup_details) && !(allowSupersetEnrichment && canEnrichCurrentLineup(proposal, event)) && !canApplyRefresh && !canApplyPartial) {
     reasons.push("current_lineup_not_weak");
   }
   if (!proposal.source_url) reasons.push("missing_source_url");
@@ -277,7 +330,16 @@ for (const proposal of proposals || []) {
       rejected.push({ proposal, event, reasons });
     }
   } else {
-    approved.push({ proposal, event });
+    const publicLineup = canApplyPartial
+      ? normalizePartialPublicLineup(proposal.proposed_lineup_details)
+      : normalizePublicLineup(proposal.proposed_lineup_details);
+    const approvedKey = `${event.id}|${publicLineup.toLowerCase()}`;
+    if (approvedKeys.has(approvedKey)) {
+      rejected.push({ proposal, event, reasons: ["duplicate_proposal_same_public_lineup"] });
+    } else {
+      approvedKeys.add(approvedKey);
+      approved.push({ proposal, event });
+    }
   }
 }
 
@@ -307,8 +369,17 @@ if (apply && alreadyApplied.length) {
 
 if (apply && approved.length) {
   for (const { proposal, event } of approved) {
+    const canApplyPartial = Boolean(
+      allowPartialSourceBacked &&
+        ["official_venue", "fourvenues_public", "ticketing_platform"].includes(proposal.source_type) &&
+        proposalSourceMatchesDate(proposal, event) &&
+        canReplaceCurrentLineup(event?.lineup_details) &&
+        isSafePartialProposedLineup(proposal.proposed_lineup_details),
+    );
     const updatePayload = {
-      lineup_details: normalizePublicLineup(proposal.proposed_lineup_details),
+      lineup_details: canApplyPartial
+        ? normalizePartialPublicLineup(proposal.proposed_lineup_details)
+        : normalizePublicLineup(proposal.proposed_lineup_details),
       last_synced_at: new Date().toISOString(),
     };
     if (canReplaceEventUrl(event.event_url)) updatePayload.event_url = proposal.source_url;
@@ -332,7 +403,9 @@ if (apply && approved.length) {
           ...(proposal.raw_metadata || {}),
           safe_apply_batch: true,
           safe_apply_batch_at: new Date().toISOString(),
-          safe_apply_mode: allowExactDateRefresh && canRefreshExactDateLineup(proposal, event)
+          safe_apply_mode: canApplyPartial
+            ? "partial_source_backed_replacement"
+            : allowExactDateRefresh && canRefreshExactDateLineup(proposal, event)
             ? "exact_date_reviewed_refresh"
             : allowSupersetEnrichment && canEnrichCurrentLineup(proposal, event)
               ? "superset_enrichment"
@@ -349,10 +422,12 @@ if (apply && approved.length) {
 console.log(JSON.stringify({
   apply,
   source_type: sourceType,
+  venue_pattern: venuePattern || null,
   allow_superset_enrichment: allowSupersetEnrichment,
   allow_exact_date_refresh: allowExactDateRefresh,
+  allow_partial_source_backed: allowPartialSourceBacked,
   today_madrid: todayMadrid,
-  proposals_checked: proposals?.length || 0,
+  proposals_checked: filteredProposals.length,
   approved_for_apply: approved.length,
   already_applied_noop: alreadyApplied.length,
   rejected_by_guard: rejected.length,
@@ -362,7 +437,9 @@ console.log(JSON.stringify({
     date: event.date,
     venue: event.venue,
     event_name: event.event_name,
-    proposed_lineup_details: normalizePublicLineup(proposal.proposed_lineup_details),
+    proposed_lineup_details: allowPartialSourceBacked && isSafePartialProposedLineup(proposal.proposed_lineup_details)
+      ? normalizePartialPublicLineup(proposal.proposed_lineup_details)
+      : normalizePublicLineup(proposal.proposed_lineup_details),
     source_url: proposal.source_url,
     would_replace_event_url: canReplaceEventUrl(event.event_url),
   })),

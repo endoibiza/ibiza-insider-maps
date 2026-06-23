@@ -11,6 +11,10 @@ on:
         description: Proposal source type to apply
         required: false
         default: "fourvenues_public"
+      venue_pattern:
+        description: Optional venue/event regex filter
+        required: false
+        default: ""
       limit:
         description: Maximum proposals to inspect
         required: false
@@ -21,6 +25,10 @@ on:
         default: "false"
       allow_exact_date_refresh:
         description: Allow reviewed exact-date official/ticketing sources to refresh existing lineups
+        required: false
+        default: "false"
+      allow_partial_source_backed:
+        description: Allow partial official/trusted lineups to replace blank/TBA rows as (+ more TBA)
         required: false
         default: "false"
 
@@ -34,9 +42,11 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       APPLY: ${{ inputs.apply }}
       SOURCE_TYPE: ${{ inputs.source_type }}
+      VENUE_PATTERN: ${{ inputs.venue_pattern }}
       LIMIT: ${{ inputs.limit }}
       ALLOW_SUPERSET_ENRICHMENT: ${{ inputs.allow_superset_enrichment }}
       ALLOW_EXACT_DATE_REFRESH: ${{ inputs.allow_exact_date_refresh }}
+      ALLOW_PARTIAL_SOURCE_BACKED: ${{ inputs.allow_partial_source_backed }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
