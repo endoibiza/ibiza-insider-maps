@@ -9,7 +9,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { ANALYTICS_EVENTS, track } from "@/lib/analytics";
 import {
   formatEventDate,
+  getCommercialOptionLabels,
   getEventCta,
+  getEventCtas,
   getEventDescription,
   getEventImage,
   hasAvailableRates,
@@ -42,17 +44,19 @@ const EventDetailPage = () => {
     },
   });
 
-  const cta = event ? getEventCta(event) : null;
+  const primaryCta = event ? getEventCta(event) : null;
+  const ctas = event ? getEventCtas(event) : [];
+  const commercialLabels = event ? getCommercialOptionLabels(event) : [];
   const image = event ? getEventImage(event) : "";
   const description = event ? getEventDescription(event) : "";
   const pageTitle = event ? `${event.event_name} | Ibiza Maps` : "Event | Ibiza Maps";
   const pageDescription = description || event?.type || "Ibiza event details from Ibiza Maps.";
 
-  const trackEventCta = () => {
+  const trackEventCta = (location = "primary_cta") => {
     if (!event) return;
     track(ANALYTICS_EVENTS.eventOutboundClicked, {
       source: "event_detail_page",
-      location: "primary_cta",
+      location,
       event_slug: event.slug,
       event_source: event.source,
       organization_id: event.fourvenues_organization_id,
@@ -150,20 +154,37 @@ const EventDetailPage = () => {
                         <Ticket className="h-4 w-4" />
                         Booking options available
                       </div>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        Ticket, list, or preregistration options are available through the event partner.
+                      {commercialLabels.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {commercialLabels.map((label) => (
+                            <Badge key={label} variant="outline">
+                              {label}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                      <p className="mt-3 text-sm text-muted-foreground">
+                        Available options are shown from official partner data when provided.
                       </p>
                     </div>
                   )}
 
-                  {cta && (
-                    <Button asChild className="w-full" size="lg" onClick={trackEventCta}>
+                  {primaryCta && (
+                    <Button asChild className="w-full" size="lg" onClick={() => trackEventCta(primaryCta.kind)}>
+                      <a href={primaryCta.url} target="_blank" rel="noopener noreferrer">
+                        {primaryCta.label}
+                        <ExternalLink className="ml-2 h-4 w-4" />
+                      </a>
+                    </Button>
+                  )}
+                  {ctas.slice(1).map((cta) => (
+                    <Button key={`${cta.kind}-${cta.url}`} asChild variant="outline" className="w-full" onClick={() => trackEventCta(cta.kind)}>
                       <a href={cta.url} target="_blank" rel="noopener noreferrer">
                         {cta.label}
                         <ExternalLink className="ml-2 h-4 w-4" />
                       </a>
                     </Button>
-                  )}
+                  ))}
                 </CardContent>
               </Card>
             </aside>

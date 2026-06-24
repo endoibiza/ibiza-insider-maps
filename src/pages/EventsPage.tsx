@@ -9,8 +9,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { ANALYTICS_EVENTS, track } from "@/lib/analytics";
 import {
   formatEventDate,
+  getCommercialOptionLabels,
   getEventCardDescription,
-  getEventCta,
+  getEventCtas,
   getEventImage,
   hasAvailableRates,
   isFourvenuesEvent,
@@ -133,7 +134,9 @@ const EventsPage = () => {
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {events.map((event) => {
               const image = getEventImage(event);
-              const cta = getEventCta(event);
+              const ctas = getEventCtas(event);
+              const cardCtas = ctas.slice(0, 2);
+              const commercialLabels = getCommercialOptionLabels(event);
               const description = getEventCardDescription(event);
 
               return (
@@ -157,7 +160,7 @@ const EventsPage = () => {
                       {hasAvailableRates(event) && (
                         <Badge variant="outline" className="gap-1">
                           <Ticket className="h-3 w-3" />
-                          Booking options
+                          {commercialLabels[0] ?? "Booking options"}
                         </Badge>
                       )}
                     </div>
@@ -183,18 +186,24 @@ const EventsPage = () => {
                       <p className="mt-3 line-clamp-3 text-sm text-muted-foreground">{description}</p>
                     )}
 
-                    <div className="mt-auto flex gap-2 pt-5">
+                    <div className="mt-auto flex flex-wrap gap-2 pt-5">
                       <Button asChild className="flex-1">
                         <Link to={`/events/${event.slug}`}>Details</Link>
                       </Button>
-                      {cta && (
-                        <Button asChild variant="outline" className="gap-2" onClick={() => trackEventCta(event, "event_card")}>
+                      {cardCtas.map((cta, index) => (
+                        <Button
+                          key={`${cta.kind}-${cta.url}`}
+                          asChild
+                          variant={index === 0 ? "outline" : "secondary"}
+                          className="gap-2"
+                          onClick={() => trackEventCta(event, `event_card_${cta.kind}`)}
+                        >
                           <a href={cta.url} target="_blank" rel="noopener noreferrer" aria-label={`${cta.label}: ${event.event_name}`}>
-                            <span>{cta.label}</span>
+                            <span className="whitespace-nowrap">{cta.label}</span>
                             <ExternalLink className="h-4 w-4" />
                           </a>
                         </Button>
-                      )}
+                      ))}
                     </div>
                   </CardContent>
                 </Card>

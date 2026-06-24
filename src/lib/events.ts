@@ -84,19 +84,42 @@ export const hasVipTables = (event: CommercialEventFields) => Boolean(event.has_
 export const hasAvailableRates = (event: Pick<EventRecord, "ticket_rates" | "list_rates" | "preregister"> & CommercialEventFields) =>
   hasTicketRates(event) || hasListRates(event) || hasVipTables(event) || isActivePreregister(event.preregister);
 
+export const getCommercialOptionLabels = (
+  event: Pick<EventRecord, "ticket_rates" | "list_rates" | "preregister"> & CommercialEventFields,
+) => {
+  const labels: string[] = [];
+  if (hasTicketRates(event)) labels.push("Tickets");
+  if (hasListRates(event)) labels.push("Guest List");
+  if (hasVipTables(event)) labels.push("VIP / Tables");
+  if (isActivePreregister(event.preregister)) labels.push("Preregister");
+  return labels;
+};
+
+export const getEventCtas = (
+  event: Pick<EventRecord, "checkout_url" | "iframe_tag_url" | "iframe_script_url" | "event_url" | "ticket_rates" | "list_rates" | "preregister"> &
+    CommercialEventFields,
+): EventCta[] => {
+  const fallbackUrl = getEventCtaUrl(event);
+  const vipUrl = event.vip_booking_url || fallbackUrl;
+  const ctas: EventCta[] = [];
+  const addCta = (cta: EventCta | null) => {
+    if (!cta || !cta.url) return;
+    if (ctas.some((existing) => existing.url === cta.url)) return;
+    ctas.push(cta);
+  };
+
+  addCta(hasTicketRates(event) && fallbackUrl ? { kind: "tickets", label: "Tickets", url: fallbackUrl } : null);
+  addCta(hasListRates(event) && fallbackUrl ? { kind: "guest_list", label: "Guest List", url: fallbackUrl } : null);
+  addCta(hasVipTables(event) && vipUrl ? { kind: "vip_tables", label: "VIP / Tables", url: vipUrl } : null);
+  addCta(fallbackUrl && ctas.length === 0 ? { kind: "more_info", label: "More Info", url: fallbackUrl } : null);
+
+  return ctas;
+};
+
 export const getEventCta = (
   event: Pick<EventRecord, "checkout_url" | "iframe_tag_url" | "iframe_script_url" | "event_url" | "ticket_rates" | "list_rates" | "preregister"> &
     CommercialEventFields,
-): EventCta | null => {
-  const fallbackUrl = getEventCtaUrl(event);
-  const vipUrl = event.vip_booking_url || fallbackUrl;
-
-  if (hasTicketRates(event) && fallbackUrl) return { kind: "tickets", label: "Tickets", url: fallbackUrl };
-  if (hasListRates(event) && fallbackUrl) return { kind: "guest_list", label: "Guest List", url: fallbackUrl };
-  if (hasVipTables(event) && vipUrl) return { kind: "vip_tables", label: "VIP / Tables", url: vipUrl };
-  if (fallbackUrl) return { kind: "more_info", label: "More Info", url: fallbackUrl };
-  return null;
-};
+) => getEventCtas(event)[0] ?? null;
 
 export const isFourvenuesEvent = (event: Pick<EventRecord, "notion_page_id" | "fourvenues_event_id">) =>
   Boolean(event.fourvenues_event_id || event.notion_page_id?.startsWith("fourvenues:"));

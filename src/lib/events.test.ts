@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   EventRecord,
+  getCommercialOptionLabels,
   getEventCardDescription,
   getEventCta,
+  getEventCtas,
   getEventCtaUrl,
   getEventDescription,
   getEventImage,
@@ -91,6 +93,32 @@ describe("event helpers", () => {
       label: "More Info",
       url: "https://iframe.example/event",
     });
+  });
+
+  it("returns multiple CTA options when distinct commercial URLs are available", () => {
+    const ctas = getEventCtas(
+      event({
+        ticket_rates: [{ _id: "ticket" }],
+        has_vip_tables: true,
+        checkout_url: "https://checkout.example/event",
+        vip_booking_url: "https://vip.example/event",
+      } as Partial<EventRecord>),
+    );
+
+    expect(ctas).toEqual([
+      { kind: "tickets", label: "Tickets", url: "https://checkout.example/event" },
+      { kind: "vip_tables", label: "VIP / Tables", url: "https://vip.example/event" },
+    ]);
+    expect(getCommercialOptionLabels(event({ ticket_rates: [{}], has_vip_tables: true } as Partial<EventRecord>))).toEqual([
+      "Tickets",
+      "VIP / Tables",
+    ]);
+  });
+
+  it("does not render duplicate CTA buttons when options share the same URL", () => {
+    expect(
+      getEventCtas(event({ ticket_rates: [{ _id: "ticket" }], has_vip_tables: true, iframe_tag_url: "https://iframe.example/event" } as Partial<EventRecord>)),
+    ).toEqual([{ kind: "tickets", label: "Tickets", url: "https://iframe.example/event" }]);
   });
 
   it("detects Fourvenues rows by source key or event id", () => {
