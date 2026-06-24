@@ -16,8 +16,20 @@ import {
   getEventImage,
   hasAvailableRates,
   isFourvenuesEvent,
+  PublicBookingOption,
   PublicEventRecord,
 } from "@/lib/events";
+
+const bookingOptionSelect = `
+  id,
+  ibiza_event_id,
+  kind,
+  provider,
+  label,
+  url,
+  priority,
+  verified_at
+`;
 
 const EventDetailPage = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -40,7 +52,18 @@ const EventDetailPage = () => {
         throw new Error("Event is not published");
       }
 
-      return event;
+      const { data: bookingOptions, error: bookingError } = await (supabase as any)
+        .from("event_booking_options_public")
+        .select(bookingOptionSelect)
+        .eq("ibiza_event_id", event.id)
+        .order("priority", { ascending: true });
+
+      if (bookingError) throw bookingError;
+
+      return {
+        ...event,
+        booking_options: (bookingOptions ?? []) as PublicBookingOption[],
+      };
     },
   });
 

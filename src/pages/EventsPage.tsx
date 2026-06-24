@@ -15,6 +15,7 @@ import {
   getEventImage,
   hasAvailableRates,
   isFourvenuesEvent,
+  PublicBookingOption,
   PublicEventRecord,
 } from "@/lib/events";
 
@@ -52,6 +53,37 @@ const eventSelect = `
   source_missing_since
 `;
 
+const bookingOptionSelect = `
+  id,
+  ibiza_event_id,
+  kind,
+  provider,
+  label,
+  url,
+  priority,
+  verified_at
+`;
+
+const fetchBookingOptions = async (eventIds: string[]) => {
+  if (eventIds.length === 0) return new Map<string, PublicBookingOption[]>();
+
+  const { data, error } = await (supabase as any)
+    .from("event_booking_options_public")
+    .select(bookingOptionSelect)
+    .in("ibiza_event_id", eventIds)
+    .order("priority", { ascending: true });
+
+  if (error) throw error;
+
+  const optionsByEvent = new Map<string, PublicBookingOption[]>();
+  for (const option of (data ?? []) as PublicBookingOption[]) {
+    if (!option.ibiza_event_id) continue;
+    optionsByEvent.set(option.ibiza_event_id, [...(optionsByEvent.get(option.ibiza_event_id) ?? []), option]);
+  }
+
+  return optionsByEvent;
+};
+
 const EventsPage = () => {
   const { data: events = [], isLoading, error } = useQuery({
     queryKey: ["events"],
@@ -67,10 +99,16 @@ const EventsPage = () => {
         .limit(60);
 
       if (fetchError) throw fetchError;
-      return (data as PublicEventRecord[]).filter((event) => {
+      const visibleEvents = (data as PublicEventRecord[]).filter((event) => {
         const status = event.status?.toLowerCase();
         return status !== "hidden" && status !== "cancelled" && !event.source_missing_since;
       });
+      const optionsByEvent = await fetchBookingOptions(visibleEvents.map((event) => event.id));
+
+      return visibleEvents.map((event) => ({
+        ...event,
+        booking_options: optionsByEvent.get(event.id) ?? [],
+      }));
     },
   });
 

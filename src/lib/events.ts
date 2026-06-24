@@ -6,14 +6,23 @@ export type CommercialEventFields = Partial<{
   has_vip_tables: boolean | null;
   vip_booking_url: string | null;
   public_cta_label: string | null;
+  booking_options: PublicBookingOption[] | null;
 }>;
 
-export type EventCtaKind = "tickets" | "guest_list" | "vip_tables" | "more_info";
+export type EventCtaKind = "tickets" | "guest_list" | "vip_tables" | "preregister" | "official_event_page" | "more_info";
 
 export type EventCta = {
   kind: EventCtaKind;
   label: string;
   url: string;
+};
+
+export type PublicBookingOption = EventCta & {
+  id?: string;
+  ibiza_event_id?: string;
+  provider?: string;
+  priority?: number;
+  verified_at?: string;
 };
 
 export type PublicEventRecord = EventRecord & CommercialEventFields;
@@ -82,11 +91,21 @@ export const hasListRates = (event: Pick<EventRecord, "list_rates">) => hasRows(
 export const hasVipTables = (event: CommercialEventFields) => Boolean(event.has_vip_tables);
 
 export const hasAvailableRates = (event: Pick<EventRecord, "ticket_rates" | "list_rates" | "preregister"> & CommercialEventFields) =>
-  hasTicketRates(event) || hasListRates(event) || hasVipTables(event) || isActivePreregister(event.preregister);
+  hasTicketRates(event) ||
+  hasListRates(event) ||
+  hasVipTables(event) ||
+  isActivePreregister(event.preregister) ||
+  Boolean(event.booking_options?.some((option) => ["tickets", "guest_list", "vip_tables", "preregister"].includes(option.kind)));
 
 export const getCommercialOptionLabels = (
   event: Pick<EventRecord, "ticket_rates" | "list_rates" | "preregister"> & CommercialEventFields,
 ) => {
+  const optionLabels = (event.booking_options ?? [])
+    .filter((option) => ["tickets", "guest_list", "vip_tables", "preregister"].includes(option.kind))
+    .sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100))
+    .map((option) => option.label);
+  if (optionLabels.length > 0) return [...new Set(optionLabels)];
+
   const labels: string[] = [];
   if (hasTicketRates(event)) labels.push("Tickets");
   if (hasListRates(event)) labels.push("Guest List");
@@ -107,6 +126,13 @@ export const getEventCtas = (
     if (ctas.some((existing) => existing.url === cta.url)) return;
     ctas.push(cta);
   };
+
+  (event.booking_options ?? [])
+    .filter((option) => option.url)
+    .sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100))
+    .forEach((option) => addCta({ kind: option.kind, label: option.label, url: option.url }));
+
+  if (ctas.length > 0) return ctas;
 
   addCta(hasTicketRates(event) && fallbackUrl ? { kind: "tickets", label: "Tickets", url: fallbackUrl } : null);
   addCta(hasListRates(event) && fallbackUrl ? { kind: "guest_list", label: "Guest List", url: fallbackUrl } : null);

@@ -115,6 +115,63 @@ describe("event helpers", () => {
     ]);
   });
 
+  it("uses public booking options before legacy event URL fallbacks", () => {
+    const ctas = getEventCtas(
+      event({
+        event_url: "https://old.example/event",
+        booking_options: [
+          {
+            kind: "vip_tables",
+            label: "VIP / Tables",
+            url: "https://vip.example/event",
+            priority: 20,
+          },
+          {
+            kind: "tickets",
+            label: "Tickets",
+            url: "https://tickets.example/event",
+            priority: 10,
+          },
+          {
+            kind: "official_event_page",
+            label: "Official Info",
+            url: "https://venue.example/event",
+            priority: 60,
+          },
+        ],
+      } as Partial<EventRecord>),
+    );
+
+    expect(ctas).toEqual([
+      { kind: "tickets", label: "Tickets", url: "https://tickets.example/event" },
+      { kind: "vip_tables", label: "VIP / Tables", url: "https://vip.example/event" },
+      { kind: "official_event_page", label: "Official Info", url: "https://venue.example/event" },
+    ]);
+  });
+
+  it("uses booking options for customer-facing commercial labels", () => {
+    expect(
+      getCommercialOptionLabels(
+        event({
+          booking_options: [
+            {
+              kind: "official_event_page",
+              label: "Official Info",
+              url: "https://venue.example/event",
+              priority: 60,
+            },
+            {
+              kind: "vip_tables",
+              label: "VIP / Tables",
+              url: "https://vip.example/event",
+              priority: 20,
+            },
+          ],
+        } as Partial<EventRecord>),
+      ),
+    ).toEqual(["VIP / Tables"]);
+  });
+
   it("does not render duplicate CTA buttons when options share the same URL", () => {
     expect(
       getEventCtas(event({ ticket_rates: [{ _id: "ticket" }], has_vip_tables: true, iframe_tag_url: "https://iframe.example/event" } as Partial<EventRecord>)),

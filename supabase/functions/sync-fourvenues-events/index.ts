@@ -399,6 +399,14 @@ serve(async (req) => {
           .upsert(buildCommercialOptionsRow(event, upsertedEvent?.id ?? null, bookingData), { onConflict: "fourvenues_event_id" });
 
         if (commercialError) throw commercialError;
+
+        if (upsertedEvent?.id) {
+          const { error: bookingOptionsError } = await supabase.rpc("refresh_fourvenues_event_booking_options", {
+            p_ibiza_event_id: upsertedEvent.id,
+          });
+          if (bookingOptionsError) throw bookingOptionsError;
+        }
+
         recordsUpserted += 1;
       }
 
