@@ -8,13 +8,13 @@ import SEOHead from "@/components/SEOHead";
 import { supabase } from "@/integrations/supabase/client";
 import { ANALYTICS_EVENTS, track } from "@/lib/analytics";
 import {
-  EventRecord,
   formatEventDate,
-  getEventCtaUrl,
-  getEventDescription,
+  getEventCardDescription,
+  getEventCta,
   getEventImage,
   hasAvailableRates,
   isFourvenuesEvent,
+  PublicEventRecord,
 } from "@/lib/events";
 
 const eventSelect = `
@@ -44,6 +44,10 @@ const eventSelect = `
   ticket_rates,
   list_rates,
   preregister,
+  has_ticket_rates,
+  has_guest_list,
+  has_vip_tables,
+  public_cta_label,
   source_missing_since
 `;
 
@@ -52,7 +56,7 @@ const EventsPage = () => {
     queryKey: ["events"],
     queryFn: async () => {
       const { data, error: fetchError } = await supabase
-        .from("ibiza_events")
+        .from("ibiza_events_public" as "ibiza_events")
         .select(eventSelect)
         .gte("date", new Date().toISOString().slice(0, 10))
         .is("source_missing_since", null)
@@ -62,14 +66,14 @@ const EventsPage = () => {
         .limit(60);
 
       if (fetchError) throw fetchError;
-      return (data as EventRecord[]).filter((event) => {
+      return (data as PublicEventRecord[]).filter((event) => {
         const status = event.status?.toLowerCase();
         return status !== "hidden" && status !== "cancelled" && !event.source_missing_since;
       });
     },
   });
 
-  const trackEventCta = (event: EventRecord, location: string) => {
+  const trackEventCta = (event: PublicEventRecord, location: string) => {
     track(ANALYTICS_EVENTS.eventOutboundClicked, {
       source: "events_page",
       location,
@@ -129,8 +133,8 @@ const EventsPage = () => {
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {events.map((event) => {
               const image = getEventImage(event);
-              const ctaUrl = getEventCtaUrl(event);
-              const description = getEventDescription(event);
+              const cta = getEventCta(event);
+              const description = getEventCardDescription(event);
 
               return (
                 <Card key={event.id} className="overflow-hidden border-border/70">
@@ -183,9 +187,10 @@ const EventsPage = () => {
                       <Button asChild className="flex-1">
                         <Link to={`/events/${event.slug}`}>Details</Link>
                       </Button>
-                      {ctaUrl && (
-                        <Button asChild variant="outline" onClick={() => trackEventCta(event, "event_card")}>
-                          <a href={ctaUrl} target="_blank" rel="noopener noreferrer">
+                      {cta && (
+                        <Button asChild variant="outline" className="gap-2" onClick={() => trackEventCta(event, "event_card")}>
+                          <a href={cta.url} target="_blank" rel="noopener noreferrer" aria-label={`${cta.label}: ${event.event_name}`}>
+                            <span>{cta.label}</span>
                             <ExternalLink className="h-4 w-4" />
                           </a>
                         </Button>

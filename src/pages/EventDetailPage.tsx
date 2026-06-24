@@ -8,13 +8,13 @@ import SEOHead from "@/components/SEOHead";
 import { supabase } from "@/integrations/supabase/client";
 import { ANALYTICS_EVENTS, track } from "@/lib/analytics";
 import {
-  EventRecord,
   formatEventDate,
-  getEventCtaUrl,
+  getEventCta,
   getEventDescription,
   getEventImage,
   hasAvailableRates,
   isFourvenuesEvent,
+  PublicEventRecord,
 } from "@/lib/events";
 
 const EventDetailPage = () => {
@@ -25,14 +25,14 @@ const EventDetailPage = () => {
     enabled: Boolean(slug),
     queryFn: async () => {
       const { data, error: fetchError } = await supabase
-        .from("ibiza_events")
+        .from("ibiza_events_public" as "ibiza_events")
         .select("*")
         .eq("slug", slug)
         .single();
 
       if (fetchError) throw fetchError;
 
-      const event = data as EventRecord;
+      const event = data as PublicEventRecord;
       const status = event.status?.toLowerCase();
       if (status === "hidden" || status === "cancelled" || event.source_missing_since) {
         throw new Error("Event is not published");
@@ -42,7 +42,7 @@ const EventDetailPage = () => {
     },
   });
 
-  const ctaUrl = event ? getEventCtaUrl(event) : "";
+  const cta = event ? getEventCta(event) : null;
   const image = event ? getEventImage(event) : "";
   const description = event ? getEventDescription(event) : "";
   const pageTitle = event ? `${event.event_name} | Ibiza Maps` : "Event | Ibiza Maps";
@@ -156,10 +156,10 @@ const EventDetailPage = () => {
                     </div>
                   )}
 
-                  {ctaUrl && (
+                  {cta && (
                     <Button asChild className="w-full" size="lg" onClick={trackEventCta}>
-                      <a href={ctaUrl} target="_blank" rel="noopener noreferrer">
-                        Open booking
+                      <a href={cta.url} target="_blank" rel="noopener noreferrer">
+                        {cta.label}
                         <ExternalLink className="ml-2 h-4 w-4" />
                       </a>
                     </Button>
