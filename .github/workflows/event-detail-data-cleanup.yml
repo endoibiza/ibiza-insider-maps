@@ -1,0 +1,39 @@
+name: Event detail data cleanup
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Apply guarded data cleanup
+        required: false
+        default: "false"
+      venue_pattern:
+        description: Optional venue/event regex filter
+        required: false
+        default: ""
+
+jobs:
+  event-detail-data-cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    name: event-detail-data-cleanup
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      APPLY: ${{ inputs.apply }}
+      VENUE_PATTERN: ${{ inputs.venue_pattern }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Clean legacy detail fields
+        run: node scripts/event-detail-data-cleanup.mjs
