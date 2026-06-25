@@ -171,11 +171,11 @@ const EventDetailPage = () => {
                     </div>
                   )}
 
-                  {hasAvailableRates(event) && (
+                  {ctas.length > 0 && (
                     <div className="rounded-lg bg-muted p-4">
                       <div className="flex items-center gap-2 font-medium">
                         <Ticket className="h-4 w-4" />
-                        Booking options available
+                        Booking options
                       </div>
                       {commercialLabels.length > 0 && (
                         <div className="mt-3 flex flex-wrap gap-2">
@@ -187,7 +187,7 @@ const EventDetailPage = () => {
                         </div>
                       )}
                       <p className="mt-3 text-sm text-muted-foreground">
-                        Available options are shown from official partner data when provided.
+                        Choose from the available official event, ticket, guest-list, or VIP/table options.
                       </p>
                     </div>
                   )}

@@ -1,17 +1,14 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { CalendarDays, ExternalLink, MapPin, Ticket } from "lucide-react";
+import { CalendarDays, MapPin, Ticket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import SEOHead from "@/components/SEOHead";
 import { supabase } from "@/integrations/supabase/client";
-import { ANALYTICS_EVENTS, track } from "@/lib/analytics";
 import {
   formatEventDate,
-  getCommercialOptionLabels,
   getEventCardDescription,
-  getEventCtas,
   getEventImage,
   hasAvailableRates,
   isFourvenuesEvent,
@@ -112,17 +109,6 @@ const EventsPage = () => {
     },
   });
 
-  const trackEventCta = (event: PublicEventRecord, location: string) => {
-    track(ANALYTICS_EVENTS.eventOutboundClicked, {
-      source: "events_page",
-      location,
-      event_slug: event.slug,
-      event_source: event.source,
-      organization_id: event.fourvenues_organization_id,
-      has_rates: hasAvailableRates(event),
-    });
-  };
-
   return (
     <div className="min-h-screen bg-background">
       <SEOHead
@@ -172,9 +158,6 @@ const EventsPage = () => {
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {events.map((event) => {
               const image = getEventImage(event);
-              const ctas = getEventCtas(event);
-              const cardCtas = ctas.slice(0, 2);
-              const commercialLabels = getCommercialOptionLabels(event);
               const description = getEventCardDescription(event);
 
               return (
@@ -198,7 +181,7 @@ const EventsPage = () => {
                       {hasAvailableRates(event) && (
                         <Badge variant="outline" className="gap-1">
                           <Ticket className="h-3 w-3" />
-                          {commercialLabels[0] ?? "Booking options"}
+                          Booking options
                         </Badge>
                       )}
                     </div>
@@ -226,22 +209,8 @@ const EventsPage = () => {
 
                     <div className="mt-auto flex flex-wrap gap-2 pt-5">
                       <Button asChild className="flex-1">
-                        <Link to={`/events/${event.slug}`}>Details</Link>
+                        <Link to={`/events/${event.slug}`}>View event info</Link>
                       </Button>
-                      {cardCtas.map((cta, index) => (
-                        <Button
-                          key={`${cta.kind}-${cta.url}`}
-                          asChild
-                          variant={index === 0 ? "outline" : "secondary"}
-                          className="gap-2"
-                          onClick={() => trackEventCta(event, `event_card_${cta.kind}`)}
-                        >
-                          <a href={cta.url} target="_blank" rel="noopener noreferrer" aria-label={`${cta.label}: ${event.event_name}`}>
-                            <span className="whitespace-nowrap">{cta.label}</span>
-                            <ExternalLink className="h-4 w-4" />
-                          </a>
-                        </Button>
-                      ))}
                     </div>
                   </CardContent>
                 </Card>

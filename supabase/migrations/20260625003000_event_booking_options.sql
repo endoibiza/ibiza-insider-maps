@@ -182,8 +182,8 @@ AS $$
   SELECT CASE
     WHEN p_url IS NULL THEN 'manual'
     WHEN lower(p_url) LIKE '%dice.fm%' OR lower(p_url) LIKE '%shotgun.live%' OR lower(p_url) LIKE '%eventbrite.%' OR lower(p_url) LIKE '%cm.com%' OR lower(p_url) LIKE '%clubtickets.com%' OR lower(p_url) LIKE '%ticketfairy.com%' OR lower(p_url) LIKE '%skiddle.com%' OR lower(p_url) LIKE '%ticketmaster.%' OR lower(p_url) LIKE '%bacantix.com%' OR lower(p_url) LIKE '%reservaentradas.com%' THEN 'ticketing_platform'
-    WHEN lower(p_url) LIKE '%ibiza-spotlight.com%' OR lower(COALESCE(p_source, '')) LIKE '%spotlight%' THEN 'ibiza_spotlight'
     WHEN lower(p_url) LIKE '%edenibiza.com%' OR lower(p_url) LIKE '%chinois.com%' OR lower(p_url) LIKE '%covasanta.com%' OR lower(p_url) LIKE '%hiibiza.com%' OR lower(p_url) LIKE '%theushuaiaexperience.com%' OR lower(p_url) LIKE '%unvrs.com%' OR lower(p_url) LIKE '%pacha.com%' OR lower(p_url) LIKE '%playasoleil.com%' OR lower(p_url) LIKE '%amnesia.es%' OR lower(p_url) LIKE '%dc10ibiza.com%' OR lower(p_url) LIKE '%pikesibiza.com%' OR lower(p_url) LIKE '%ibizarocks.com%' OR lower(p_url) LIKE '%528ibiza.com%' OR lower(p_url) LIKE '%akashaibiza.com%' OR lower(p_url) LIKE '%lasdalias.es%' THEN 'official_venue'
+    WHEN lower(p_url) LIKE '%ibiza-spotlight.com%' OR lower(COALESCE(p_source, '')) LIKE '%spotlight%' THEN 'ibiza_spotlight'
     ELSE 'manual'
   END;
 $$;
@@ -228,7 +228,7 @@ option_rows AS (
     event_url AS url,
     CASE
       WHEN public.classify_event_booking_kind(event_url, provider) = 'tickets' THEN 10
-      WHEN public.classify_event_booking_kind(event_url, provider) = 'official_event_page' THEN 60
+      WHEN public.classify_event_booking_kind(event_url, provider) = 'official_event_page' THEN 15
       ELSE 80
     END AS priority
   FROM source_rows
@@ -333,18 +333,27 @@ SELECT
   event_url,
   CASE
     WHEN public.classify_event_booking_kind(event_url, provider) = 'tickets' THEN 10
-    ELSE 60
+    ELSE 15
   END,
   event_url,
   source_event_id,
   now(),
-  false,
-  0.60,
-  jsonb_build_object('generated_from', 'recovered_duplicate_event_url', 'requires_review', true)
+  provider = 'official_venue',
+  CASE WHEN provider = 'official_venue' THEN 0.78 ELSE 0.60 END,
+  jsonb_build_object(
+    'generated_from',
+    'recovered_duplicate_event_url',
+    'requires_review',
+    provider <> 'official_venue'
+  )
 FROM matches
 ON CONFLICT (ibiza_event_id, kind, provider, url) DO UPDATE SET
   source_event_id = EXCLUDED.source_event_id,
-  active = event_booking_options.active,
+  active = CASE
+    WHEN event_booking_options.provider = 'official_venue' THEN true
+    ELSE event_booking_options.active
+  END,
+  priority = LEAST(event_booking_options.priority, EXCLUDED.priority),
   confidence = GREATEST(event_booking_options.confidence, EXCLUDED.confidence),
   metadata = event_booking_options.metadata || EXCLUDED.metadata,
   updated_at = now();
