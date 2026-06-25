@@ -89,10 +89,10 @@ await request("sync_log", {
   body: JSON.stringify({
     table_name: "ibiza_events_fourvenues_detail_cleanup",
     status: "success",
-    records_processed: rows.length,
     records_upserted: targets.length,
     metadata: {
       repair: "Cleared slug-like event_series from Fourvenues-owned public rows so legacy detail pages do not render machine slugs.",
+      records_processed: rows.length,
       venue_pattern: VENUE_PATTERN || null,
       protected_fields: ["mikes_pick", "featured_on_party_calendar", "residents_pass", "slug", "event_url", "lineup_details"],
     },
