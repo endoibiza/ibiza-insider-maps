@@ -12,6 +12,7 @@ import {
   getEventImage,
   hasAvailableRates,
   isFourvenuesEvent,
+  normalizeVenueDisplayName,
   PublicBookingOption,
   PublicEventRecord,
 } from "@/lib/events";
@@ -159,6 +160,7 @@ const EventsPage = () => {
             {events.map((event) => {
               const image = getEventImage(event);
               const description = getEventCardDescription(event);
+              const venueLabel = normalizeVenueDisplayName(event.venue);
 
               return (
                 <Card key={event.id} className="overflow-hidden border-border/70">
@@ -190,10 +192,10 @@ const EventsPage = () => {
                       <h2 className="text-xl font-semibold leading-tight group-hover:text-primary">{event.event_name}</h2>
                     </Link>
 
-                    {event.venue && (
+                    {venueLabel && (
                       <p className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
                         <MapPin className="h-4 w-4 shrink-0" />
-                        <span className="truncate">{event.venue}</span>
+                        <span className="truncate">{venueLabel}</span>
                       </p>
                     )}
 

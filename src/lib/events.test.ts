@@ -11,6 +11,7 @@ import {
   hasAvailableRates,
   isSlugLikeEventSeries,
   isFourvenuesEvent,
+  normalizeVenueDisplayName,
 } from "./events";
 
 const event = (overrides: Partial<EventRecord>): EventRecord =>
@@ -182,5 +183,12 @@ describe("event helpers", () => {
     expect(isFourvenuesEvent(event({ notion_page_id: "fourvenues:evt_123" }))).toBe(true);
     expect(isFourvenuesEvent(event({ fourvenues_event_id: "evt_123" }))).toBe(true);
     expect(isFourvenuesEvent(event({ notion_page_id: "notion-page-id" }))).toBe(false);
+  });
+
+  it("normalizes Chinois venue names to the official public name", () => {
+    expect(normalizeVenueDisplayName("Club Chinois")).toBe("Chinois");
+    expect(normalizeVenueDisplayName("Chinois Ibiza")).toBe("Chinois");
+    expect(normalizeVenueDisplayName(" Chinois ")).toBe("Chinois");
+    expect(normalizeVenueDisplayName("Eden Ibiza")).toBe("Eden Ibiza");
   });
 });

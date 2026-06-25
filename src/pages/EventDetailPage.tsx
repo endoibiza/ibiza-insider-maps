@@ -16,6 +16,7 @@ import {
   getEventImage,
   hasAvailableRates,
   isFourvenuesEvent,
+  normalizeVenueDisplayName,
   PublicBookingOption,
   PublicEventRecord,
 } from "@/lib/events";
@@ -74,6 +75,7 @@ const EventDetailPage = () => {
   const description = event ? getEventDescription(event) : "";
   const pageTitle = event ? `${event.event_name} | Ibiza Maps` : "Event | Ibiza Maps";
   const pageDescription = description || event?.type || "Ibiza event details from Ibiza Maps.";
+  const venueLabel = event ? normalizeVenueDisplayName(event.venue) : "";
 
   const trackEventCta = (location = "primary_cta") => {
     if (!event) return;
@@ -132,10 +134,10 @@ const EventDetailPage = () => {
 
               <h1 className="text-4xl font-bold tracking-tight md:text-5xl">{event.event_name}</h1>
 
-              {event.venue && (
+              {venueLabel && (
                 <p className="mt-4 flex items-center gap-2 text-muted-foreground">
                   <MapPin className="h-5 w-5 shrink-0" />
-                  <span>{event.venue}</span>
+                  <span>{venueLabel}</span>
                 </p>
               )}
 
@@ -163,10 +165,10 @@ const EventDetailPage = () => {
                     )}
                   </div>
 
-                  {event.venue && (
+                  {venueLabel && (
                     <div>
                       <p className="text-sm font-medium text-muted-foreground">Where</p>
-                      <p className="mt-1 font-semibold">{event.venue}</p>
+                      <p className="mt-1 font-semibold">{venueLabel}</p>
                       {event.location_address && <p className="text-sm text-muted-foreground">{event.location_address}</p>}
                     </div>
                   )}

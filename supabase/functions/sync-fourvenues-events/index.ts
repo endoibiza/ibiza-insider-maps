@@ -148,6 +148,9 @@ const artistNames = (value: unknown) => {
 
 const KNOWN_VENUE_NAMES: Record<string, string> = {
   "eden ibiza": "Eden Ibiza",
+  "club chinois": "Chinois",
+  "chinois ibiza": "Chinois",
+  chinois: "Chinois",
 };
 
 const normalizeVenueName = (value?: string | null) => {

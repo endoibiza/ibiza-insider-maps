@@ -27,6 +27,18 @@ export type PublicBookingOption = EventCta & {
 
 export type PublicEventRecord = EventRecord & CommercialEventFields;
 
+const CANONICAL_VENUE_NAMES: Record<string, string> = {
+  "club chinois": "Chinois",
+  "chinois ibiza": "Chinois",
+  chinois: "Chinois",
+};
+
+export const normalizeVenueDisplayName = (venue?: string | null) => {
+  const normalized = venue?.trim().replace(/\s+/g, " ");
+  if (!normalized) return "";
+  return CANONICAL_VENUE_NAMES[normalized.toLowerCase()] ?? normalized;
+};
+
 export const formatEventDate = (date: string | null, startTime?: string | null, timezone = "Europe/Madrid") => {
   if (!date) return "Date TBC";
 
