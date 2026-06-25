@@ -66,7 +66,8 @@ FROM public.fourvenues_event_commercial_options;
 GRANT SELECT ON public.fourvenues_event_commercial_summary TO anon, authenticated;
 
 DROP VIEW IF EXISTS public.ibiza_events_public;
-CREATE VIEW public.ibiza_events_public AS
+CREATE VIEW public.ibiza_events_public
+WITH (security_invoker = true) AS
 SELECT
   e.*,
   COALESCE(c.has_ticket_rates, false) AS has_ticket_rates,

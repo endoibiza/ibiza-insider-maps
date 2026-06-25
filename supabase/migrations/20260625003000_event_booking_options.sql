@@ -55,7 +55,8 @@ ALTER TABLE public.event_booking_options ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.event_booking_options FROM anon, authenticated;
 
 DROP VIEW IF EXISTS public.event_booking_options_public;
-CREATE VIEW public.event_booking_options_public AS
+CREATE VIEW public.event_booking_options_public
+WITH (security_invoker = true) AS
 SELECT
   id,
   ibiza_event_id,
@@ -361,7 +362,8 @@ ON CONFLICT (ibiza_event_id, kind, provider, url) DO UPDATE SET
 SELECT public.refresh_fourvenues_event_booking_options(NULL);
 
 DROP VIEW IF EXISTS public.ibiza_events_public;
-CREATE VIEW public.ibiza_events_public AS
+CREATE VIEW public.ibiza_events_public
+WITH (security_invoker = true) AS
 SELECT
   e.*,
   COALESCE(c.has_ticket_rates, false) AS has_ticket_rates,
