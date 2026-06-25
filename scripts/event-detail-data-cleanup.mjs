@@ -38,17 +38,16 @@ const request = async (path, options = {}) => {
   return text ? JSON.parse(text) : null;
 };
 
-const rows = await request(
-  [
-    "ibiza_events",
-    "?select=id,event_name,slug,venue,notion_page_id,event_series,status,source_missing_since",
-    "&notion_page_id=like.fourvenues:%",
-    "&event_series=not.is.null",
-    "&source_missing_since=is.null",
-    "&status=neq.Cancelled",
-    "&limit=1000",
-  ].join(""),
-);
+const params = new URLSearchParams({
+  select: "id,event_name,slug,venue,notion_page_id,event_series,status,source_missing_since",
+  notion_page_id: "like.fourvenues:%",
+  event_series: "not.is.null",
+  source_missing_since: "is.null",
+  status: "neq.Cancelled",
+  limit: "1000",
+});
+
+const rows = await request(`ibiza_events?${params.toString()}`);
 
 const targets = rows.filter((row) => matchesVenue(row) && isSlugLikeEventSeries(row.event_series));
 
