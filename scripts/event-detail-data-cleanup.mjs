@@ -88,9 +88,9 @@ await request("sync_log", {
   headers: { prefer: "return=minimal" },
   body: JSON.stringify({
     table_name: "ibiza_events_fourvenues_detail_cleanup",
-    status: "success",
     records_upserted: targets.length,
     metadata: {
+      status: "success",
       repair: "Cleared slug-like event_series from Fourvenues-owned public rows so legacy detail pages do not render machine slugs.",
       records_processed: rows.length,
       venue_pattern: VENUE_PATTERN || null,

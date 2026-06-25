@@ -127,9 +127,9 @@ await request("sync_log", {
   headers: { prefer: "return=minimal" },
   body: JSON.stringify({
     table_name: "ibiza_events_chinois_mikes_picks",
-    status: "success",
     records_upserted: toUpdate.length,
     metadata: {
+      status: "success",
       requested_picks: picks.length,
       matched_rows: matches.length,
       already_mikes_picks: alreadyPicked.length,
