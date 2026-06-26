@@ -120,6 +120,12 @@ jobs:
           LIMIT: "140"
         run: node scripts/ushuaia-ticket-options-seed.mjs
 
+      - name: Clean stale booking options
+        env:
+          APPLY: ${{ env.APPLY_TICKET_REPAIRS }}
+          LIMIT: "2000"
+        run: node scripts/event-booking-options-cleanup.mjs
+
       - name: Generate Night League lineup fullness report
         env:
           APPLY_STAGING: "false"
