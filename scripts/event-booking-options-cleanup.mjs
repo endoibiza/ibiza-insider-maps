@@ -26,6 +26,14 @@ const request = async (path, options = {}) => {
 };
 
 const betterKinds = new Set(["tickets", "vip_tables", "guest_list", "preregister", "official_event_page"]);
+const kindRank = {
+  tickets: 10,
+  official_event_page: 20,
+  vip_tables: 30,
+  guest_list: 40,
+  preregister: 50,
+  more_info: 60,
+};
 
 const fetchAllActiveOptions = async () => {
   const output = [];
@@ -49,6 +57,7 @@ const moreInfoOptions = (options || []).filter((option) => option.active === tru
 
 const staleTargets = [];
 const kept = [];
+const duplicateUrlTargets = [];
 
 for (const option of moreInfoOptions) {
   const siblings = (byEvent.get(option.ibiza_event_id) || []).filter((sibling) => sibling.id !== option.id);
@@ -77,21 +86,57 @@ for (const option of moreInfoOptions) {
   }
 }
 
+for (const eventOptions of byEvent.values()) {
+  const byUrl = new Map();
+  for (const option of eventOptions.filter((item) => item.active === true)) {
+    const key = String(option.url || "").trim().replace(/\/$/, "");
+    if (!key) continue;
+    byUrl.set(key, [...(byUrl.get(key) || []), option]);
+  }
+
+  for (const [url, duplicates] of byUrl.entries()) {
+    if (duplicates.length < 2) continue;
+    const sorted = [...duplicates].sort((a, b) => {
+      const rankDiff = (kindRank[a.kind] ?? 100) - (kindRank[b.kind] ?? 100);
+      if (rankDiff !== 0) return rankDiff;
+      return Number(a.priority || 100) - Number(b.priority || 100);
+    });
+    const keeper = sorted[0];
+    for (const duplicate of sorted.slice(1)) {
+      duplicateUrlTargets.push({
+        option: duplicate,
+        reason: "same_event_has_stronger_label_for_same_url",
+        kept: `${keeper.kind}:${keeper.provider}:${keeper.label}`,
+        url,
+      });
+    }
+  }
+}
+
+const targetsById = new Map();
+for (const target of [...staleTargets, ...duplicateUrlTargets]) {
+  targetsById.set(target.option.id, target);
+}
+const targets = [...targetsById.values()];
+
 console.log(
   JSON.stringify(
     {
       apply: APPLY,
       active_options_scanned: options?.length ?? 0,
       active_more_info: moreInfoOptions.length,
-      stale_targets_to_deactivate: staleTargets.length,
+      stale_more_info_targets_to_deactivate: staleTargets.length,
+      duplicate_url_targets_to_deactivate: duplicateUrlTargets.length,
+      total_targets_to_deactivate: targets.length,
       kept_more_info: kept.length,
-      target_preview: staleTargets.slice(0, 50).map((target) => ({
+      target_preview: targets.slice(0, 50).map((target) => ({
         option_id: target.option.id,
         event_id: target.option.ibiza_event_id,
         label: target.option.label,
         url: target.option.url,
         reason: target.reason,
         better: target.better,
+        kept: target.kept,
       })),
       kept_preview: kept.slice(0, 30),
     },
@@ -100,12 +145,12 @@ console.log(
   ),
 );
 
-if (!APPLY || staleTargets.length === 0) {
+if (!APPLY || targets.length === 0) {
   process.exit(0);
 }
 
 const now = new Date().toISOString();
-for (const target of staleTargets) {
+for (const target of targets) {
   await request(`event_booking_options?id=eq.${target.option.id}`, {
     method: "PATCH",
     headers: { prefer: "return=minimal" },
@@ -117,6 +162,7 @@ for (const target of staleTargets) {
         deactivated_at: now,
         deactivation_reason: target.reason,
         better_options: target.better,
+        kept_option: target.kept,
       },
     }),
   });
@@ -127,14 +173,15 @@ await request("sync_log", {
   headers: { prefer: "return=minimal" },
   body: JSON.stringify({
     table_name: "event_booking_options_cleanup",
-    records_upserted: staleTargets.length,
+    records_upserted: targets.length,
     metadata: {
       status: "success",
-      repair: "Deactivated stale Fourvenues iframe More Info options when a more specific public booking option exists.",
+      repair: "Deactivated stale More Info options and duplicate same-URL booking options when stronger labels exist.",
       active_more_info: moreInfoOptions.length,
       kept_more_info: kept.length,
+      duplicate_url_targets: duplicateUrlTargets.length,
     },
   }),
 });
 
-console.log(`Deactivated ${staleTargets.length} stale Fourvenues iframe More Info options.`);
+console.log(`Deactivated ${targets.length} stale or duplicate booking options.`);

@@ -126,6 +126,12 @@ jobs:
           LIMIT: "2000"
         run: node scripts/event-booking-options-cleanup.mjs
 
+      - name: Audit booking option health
+        env:
+          START_DATE: ""
+          LIMIT: "1000"
+        run: node scripts/event-booking-options-audit.mjs | tee event-booking-options-audit.json
+
       - name: Generate Night League lineup fullness report
         env:
           APPLY_STAGING: "false"
@@ -149,3 +155,4 @@ jobs:
           path: |
             event-season-repair-report.md
             night-league-lineup-fullness-report.md
+            event-booking-options-audit.json

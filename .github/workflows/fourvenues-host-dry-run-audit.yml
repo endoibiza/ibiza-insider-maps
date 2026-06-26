@@ -1,0 +1,57 @@
+name: Fourvenues host dry-run audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      venue_pattern:
+        description: "Host name/slug pattern to inspect"
+        required: true
+        default: "chinois"
+      refresh_auth:
+        description: "Refresh Channel Manager auth/hosts before auditing"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      horizon_days:
+        description: "Days ahead to dry-run"
+        required: true
+        default: "180"
+      include_vip_availability:
+        description: "Check VIP/table availability"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run host dry-run audit
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VENUE_PATTERN: ${{ inputs.venue_pattern }}
+          REFRESH_AUTH: ${{ inputs.refresh_auth }}
+          HORIZON_DAYS: ${{ inputs.horizon_days }}
+          INCLUDE_VIP_AVAILABILITY: ${{ inputs.include_vip_availability }}
+          LIMIT: "100"
+        run: node scripts/fourvenues-host-dry-run-audit.mjs | tee fourvenues-host-dry-run-audit.json
+
+      - name: Upload audit artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fourvenues-host-dry-run-audit
+          path: fourvenues-host-dry-run-audit.json
