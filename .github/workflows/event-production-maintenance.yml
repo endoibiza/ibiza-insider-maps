@@ -102,6 +102,13 @@ jobs:
           APPLY: "true"
         run: node scripts/chinois-fourvenues-reconcile.mjs
 
+      - name: Repair exact Chinois official event links
+        if: github.event_name == 'schedule' || inputs.sync_chinois_channel_manager == 'true'
+        env:
+          HORIZON_DAYS: "180"
+          APPLY: "true"
+        run: node scripts/chinois-exact-official-links-repair.mjs
+
       - name: Maintain Cova Santa ticket options
         env:
           APPLY: ${{ env.APPLY_TICKET_REPAIRS }}

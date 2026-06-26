@@ -27,6 +27,14 @@ on:
         options:
           - "true"
           - "false"
+      apply_exact_links:
+        description: "Apply exact Chinois public Fourvenues event links"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
       horizon_days:
         description: "Days ahead to sync/reconcile"
         required: true
@@ -80,3 +88,11 @@ jobs:
           HORIZON_DAYS: ${{ inputs.horizon_days }}
           APPLY: ${{ inputs.apply_reconcile }}
         run: node scripts/chinois-fourvenues-reconcile.mjs
+
+      - name: Repair exact Chinois official event links
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          HORIZON_DAYS: ${{ inputs.horizon_days }}
+          APPLY: ${{ inputs.apply_exact_links }}
+        run: node scripts/chinois-exact-official-links-repair.mjs
