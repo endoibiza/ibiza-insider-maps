@@ -1,0 +1,82 @@
+name: Chinois Fourvenues reconcile
+
+on:
+  workflow_dispatch:
+    inputs:
+      sync_first:
+        description: "Run Chinois Fourvenues sync before reconciliation"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      sync_dry_run:
+        description: "Dry-run the Fourvenues sync step"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      apply_reconcile:
+        description: "Apply reconciliation writes"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      horizon_days:
+        description: "Days ahead to sync/reconcile"
+        required: true
+        default: "7"
+      include_vip_availability:
+        description: "Check VIP/table availability in Fourvenues sync"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      limit:
+        description: "Fourvenues page size"
+        required: true
+        default: "100"
+      organization_id:
+        description: "Chinois Fourvenues host organization id"
+        required: true
+        default: "wlw4t6xtf013101dd1sstd9pw5199tkW"
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run Chinois Fourvenues sync
+        if: ${{ inputs.sync_first == 'true' }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TARGET: events
+          DRY_RUN: ${{ inputs.sync_dry_run }}
+          ORGANIZATION_ID: ${{ inputs.organization_id }}
+          HORIZON_DAYS: ${{ inputs.horizon_days }}
+          INCLUDE_RECORDS: "false"
+          INCLUDE_VIP_AVAILABILITY: ${{ inputs.include_vip_availability }}
+          LIMIT: ${{ inputs.limit }}
+        run: node scripts/fourvenues-service-sync.mjs
+
+      - name: Reconcile Chinois Fourvenues rows
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ORGANIZATION_ID: ${{ inputs.organization_id }}
+          HORIZON_DAYS: ${{ inputs.horizon_days }}
+          APPLY: ${{ inputs.apply_reconcile }}
+        run: node scripts/chinois-fourvenues-reconcile.mjs
