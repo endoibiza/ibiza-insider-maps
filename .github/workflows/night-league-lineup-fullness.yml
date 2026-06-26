@@ -1,0 +1,64 @@
+name: Night League lineup fullness
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply_staging:
+        description: "Stage exact official lineup proposals in Supabase"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      window_days:
+        description: "Days ahead to audit"
+        required: true
+        default: "180"
+      limit:
+        description: "Maximum Supabase rows to inspect"
+        required: true
+        default: "260"
+      include_full_refresh:
+        description: "Also stage fuller exact-date lineups when current text is not headliner-only"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+  schedule:
+    # Daily freshness report. In summer this is 06:55 Europe/Madrid.
+    - cron: "55 4 * * *"
+
+jobs:
+  night-league-lineup-fullness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      APPLY_STAGING: ${{ github.event_name == 'schedule' && 'false' || inputs.apply_staging }}
+      WINDOW_DAYS: ${{ github.event_name == 'schedule' && '180' || inputs.window_days }}
+      LIMIT: ${{ github.event_name == 'schedule' && '260' || inputs.limit }}
+      INCLUDE_FULL_REFRESH: ${{ github.event_name == 'schedule' && 'false' || inputs.include_full_refresh }}
+      OUTPUT_FILE: night-league-lineup-fullness-report.md
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate Night League lineup fullness report
+        run: node scripts/night-league-lineup-fullness.mjs
+
+      - name: Upload Night League report
+        uses: actions/upload-artifact@v4
+        with:
+          name: night-league-lineup-fullness-report
+          path: night-league-lineup-fullness-report.md

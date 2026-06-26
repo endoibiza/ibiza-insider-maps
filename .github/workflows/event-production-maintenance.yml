@@ -91,6 +91,14 @@ jobs:
           LIMIT: "140"
         run: node scripts/ushuaia-ticket-options-seed.mjs
 
+      - name: Generate Night League lineup fullness report
+        env:
+          APPLY_STAGING: "false"
+          WINDOW_DAYS: "180"
+          LIMIT: "260"
+          OUTPUT_FILE: night-league-lineup-fullness-report.md
+        run: node scripts/night-league-lineup-fullness.mjs
+
       - name: Generate season repair report
         if: github.event_name == 'schedule' || inputs.run_repair_report == 'true'
         env:
@@ -103,4 +111,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: event-production-maintenance-report
-          path: event-season-repair-report.md
+          path: |
+            event-season-repair-report.md
+            night-league-lineup-fullness-report.md
