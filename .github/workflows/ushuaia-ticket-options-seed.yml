@@ -1,0 +1,35 @@
+name: Ushuaia ticket options seed
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Apply Ushuaïa ticket booking options to Supabase"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      limit:
+        description: "Maximum Ushuaïa rows to scan"
+        required: true
+        default: "140"
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Seed Ushuaia ticket options
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          APPLY: ${{ inputs.apply }}
+          LIMIT: ${{ inputs.limit }}
+        run: node scripts/ushuaia-ticket-options-seed.mjs
