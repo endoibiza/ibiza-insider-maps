@@ -235,21 +235,23 @@ for (const row of fourvenuesRows) {
     (option) =>
       option.active &&
       option.kind === "official_event_page" &&
-      option.url.replace(/\/$/, "") !== match.candidate.url.replace(/\/$/, "") &&
       (/https:\/\/chinois\.com\/events(?:\/|-and-tickets\/?$)/i.test(option.url) ||
         /https:\/\/web\.fourvenues\.com\/(?:en\/)?(?:iframe\/)?chinois-ibiza/i.test(option.url)),
   );
   const hasExactOption = existingOptions.some(
-    (option) => option.active && option.url.replace(/\/$/, "") === match.candidate.url.replace(/\/$/, ""),
+    (option) =>
+      option.active &&
+      option.kind === "tickets" &&
+      option.url.replace(/\/$/, "") === match.candidate.url.replace(/\/$/, ""),
   );
 
   const option = {
     ibiza_event_id: row.id,
-    kind: "official_event_page",
+    kind: "tickets",
     provider: "official_venue",
-    label: "Official Info",
+    label: "Tickets",
     url: match.candidate.url,
-    priority: 18,
+    priority: 10,
     source_url: match.candidate.sourceCalendarUrl,
     source_event_id: duplicateLegacy?.id || null,
     verified_at: new Date().toISOString(),
@@ -262,7 +264,7 @@ for (const row of fourvenuesRows) {
       fourvenues_public_event_name: match.candidate.eventName,
       matched_score: match.score,
       matched_legacy_event_id: duplicateLegacy?.id || null,
-      note: "Exact public Fourvenues iframe event page. Non-commission fallback until Channel Manager ticket rates are exposed.",
+      note: "Exact public Chinois/Fourvenues event ticket page. Non-channel fallback until Chinois Channel Manager ticket rates are exposed.",
     },
   };
 
