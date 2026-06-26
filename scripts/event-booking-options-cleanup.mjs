@@ -1,7 +1,7 @@
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const APPLY = process.env.APPLY === "true";
-const LIMIT = Math.min(Math.max(Number(process.env.LIMIT || 500), 1), 2000);
+const PAGE_SIZE = Math.min(Math.max(Number(process.env.PAGE_SIZE || process.env.LIMIT || 500), 1), 1000);
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required");
@@ -27,9 +27,18 @@ const request = async (path, options = {}) => {
 
 const betterKinds = new Set(["tickets", "vip_tables", "guest_list", "preregister", "official_event_page"]);
 
-const options = await request(
-  `event_booking_options?select=id,ibiza_event_id,kind,provider,label,url,priority,active,metadata&active=eq.true&limit=${LIMIT}`,
-);
+const fetchAllActiveOptions = async () => {
+  const output = [];
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const page = await request(
+      `event_booking_options?select=id,ibiza_event_id,kind,provider,label,url,priority,active,metadata&active=eq.true&order=created_at.asc&limit=${PAGE_SIZE}&offset=${offset}`,
+    );
+    output.push(...(page || []));
+    if (!page || page.length < PAGE_SIZE) return output;
+  }
+};
+
+const options = await fetchAllActiveOptions();
 
 const byEvent = new Map();
 for (const option of options || []) {
