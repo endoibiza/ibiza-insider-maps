@@ -109,6 +109,8 @@ const scoreMatch = (row, candidate) => {
   const rowSeries = seriesKey(eventText(row));
   const candidateSeries = seriesKey(candidate.eventName);
   if (rowSeries && candidateSeries && rowSeries === candidateSeries) return 100;
+  if (String(row.event_url || "").includes(`/${candidate.code}`)) return 90;
+  if (String(row.event_url || "").includes(`${candidate.code}`)) return 75;
 
   const candidateWords = new Set(normalize(candidate.eventName).split(" ").filter((word) => word.length > 3));
   const rowWords = normalize(eventText(row)).split(" ").filter((word) => word.length > 3);
@@ -281,6 +283,32 @@ for (const row of fourvenuesRows) {
   });
 }
 
+const canonicalEventIds = new Set(actions.map((action) => action.row.id));
+const matchedDuplicateIds = new Set(actions.map((action) => action.duplicateLegacy?.id).filter(Boolean));
+const duplicateGroups = new Map();
+
+for (const row of visibleRows) {
+  const key = `${row.date}:${seriesKey(eventText(row)) || normalize(row.event_name)}`;
+  duplicateGroups.set(key, [...(duplicateGroups.get(key) || []), row]);
+}
+
+const extraDuplicateRows = [];
+for (const group of duplicateGroups.values()) {
+  if (group.length < 2) continue;
+  const canonical =
+    group.find((row) => canonicalEventIds.has(row.id)) ||
+    group.find((row) => /fourvenues\.com\/iframe\/ibiza-maps/i.test(String(row.event_url || ""))) ||
+    null;
+  if (!canonical) continue;
+
+  for (const row of group) {
+    if (row.id === canonical.id || matchedDuplicateIds.has(row.id)) continue;
+    if (/-club-chinois-club-chinois-/.test(row.slug || "") || !/fourvenues\.com\/iframe\/ibiza-maps/i.test(String(row.event_url || ""))) {
+      extraDuplicateRows.push(row);
+    }
+  }
+}
+
 const broadFallbackIds = [
   ...new Set(
     actions.flatMap((action) =>
@@ -290,9 +318,10 @@ const broadFallbackIds = [
 ];
 const duplicateLegacyRows = [
   ...new Map(
-    actions
-      .filter((action) => action.duplicateLegacy)
-      .map((action) => [action.duplicateLegacy.id, action.duplicateLegacy]),
+    [
+      ...actions.filter((action) => action.duplicateLegacy).map((action) => action.duplicateLegacy),
+      ...extraDuplicateRows,
+    ].map((row) => [row.id, row]),
   ).values(),
 ];
 
@@ -309,6 +338,7 @@ const summary = {
   exact_options_to_insert_or_refresh: actions.filter((action) => !action.hasExactOption).length,
   weaker_official_options_to_deactivate: broadFallbackIds.length,
   duplicate_legacy_rows_to_hide: duplicateLegacyRows.length,
+  extra_duplicate_rows_to_hide: extraDuplicateRows.length,
   preview: actions.slice(0, 50).map((action) => ({
     date: action.row.date,
     event: action.row.event_name,
