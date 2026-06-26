@@ -99,9 +99,20 @@ const titleCaseAllCaps = (token) => {
   if (!trimmed) return trimmed;
   const bare = trimmed.replace(/[^A-Za-z0-9]/g, "");
   if (acronymAllowlist.has(bare.toUpperCase())) return trimmed;
+  if (/^(and|de|del|van|von|b2b|live|hybrid|set|of)$/i.test(trimmed)) return trimmed.toLowerCase();
   if (!/[A-Z]/.test(trimmed) || /[a-z]/.test(trimmed)) return trimmed;
   if (bare.length <= 2) return trimmed;
   return trimmed.toLowerCase().replace(/(^|[-'([{/\s])([a-z])/g, (_match, prefix, letter) => `${prefix}${letter.toUpperCase()}`);
+};
+
+const titleCaseLowercase = (token) => {
+  const trimmed = token.trim();
+  if (!trimmed) return trimmed;
+  const bare = trimmed.replace(/[^A-Za-z0-9]/g, "");
+  if (acronymAllowlist.has(bare.toUpperCase())) return bare.toUpperCase();
+  if (/^(and|de|del|van|von|b2b|live|hybrid|set|of)$/i.test(trimmed)) return trimmed.toLowerCase();
+  if (/[A-Z]/.test(trimmed) || bare.length <= 2) return trimmed;
+  return trimmed.replace(/(^|[-'([{/\s])([a-z])/g, (_match, prefix, letter) => `${prefix}${letter.toUpperCase()}`);
 };
 
 const cleanArtistName = (value) =>
@@ -112,10 +123,11 @@ const cleanArtistName = (value) =>
     .split(/\s+/)
     .map((token) => {
       if (/^(b2b|live|hybrid|dj|set)$/i.test(token)) return token.toLowerCase();
-      return titleCaseAllCaps(token);
+      return titleCaseLowercase(titleCaseAllCaps(token));
     })
     .join(" ")
-    .replace(/\bDj\b/g, "DJ")
+    .replace(/([A-Za-z0-9])\(/g, "$1 (")
+    .replace(/\bdj\b/gi, "DJ")
     .replace(/\bB2b\b/gi, "b2b")
     .replace(/\bMk\b/g, "MK")
     .replace(/\bAnyma\b/g, "ANYMA")
