@@ -1,0 +1,33 @@
+name: Cova WooMooN official lineup seed
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Apply official WooMooN Cova Santa lineup and booking option updates
+        required: false
+        default: "false"
+
+jobs:
+  cova-woomoon-official-seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      APPLY: ${{ inputs.apply }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Seed official WooMooN Cova Santa data
+        run: node scripts/cova-woomoon-official-seed.mjs
