@@ -89,6 +89,12 @@ const dateFromEventSlug = (slug) => {
   return `${match[3]}-${match[2]}-${match[1]}`;
 };
 
+const dateFromUnixSeconds = (value) => {
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds <= 0) return "";
+  return new Date(seconds * 1000).toISOString().slice(0, 10);
+};
+
 const isVisible = (row) => {
   const status = String(row.status || "").toLowerCase();
   return status !== "hidden" && status !== "cancelled" && !row.source_missing_since;
@@ -130,7 +136,7 @@ const scrapeChinoisPublicEvents = async (startDate, endDate) => {
       /data-eventslug="([^"]+)"\s+data-eventcode="([^"]+)"\s+data-eventname="([^"]+)"\s+data-eventdate="([^"]+)"\s+data-eventid="([^"]+)"/g,
     )) {
       const [, slug, code, rawName, rawTimestamp, eventId] = match;
-      const date = dateFromEventSlug(slug);
+      const date = dateFromEventSlug(slug) || dateFromUnixSeconds(rawTimestamp);
       if (!date || date < startDate || date > endDate) continue;
       const eventName = decodeHtmlEntities(rawName).replace(/\s+/g, " ").trim();
       const exactUrl = `https://web.fourvenues.com/en/iframe/chinois-ibiza/events/${slug}-${code}`;
