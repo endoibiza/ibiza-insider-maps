@@ -123,7 +123,7 @@ const chooseLineup = (fourvenuesRow, legacyRow) => {
   ].filter((candidate) => candidate.text && candidate.count > 0);
 
   if (candidates.length === 0) {
-    return { text: "", source: "none", count: 0 };
+    return { text: "Lineup TBA", source: "fourvenues_unpublished", count: 0 };
   }
 
   candidates.sort((a, b) => b.count - a.count || (a.source === "fourvenues_title" ? -1 : 1));
