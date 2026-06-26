@@ -145,8 +145,8 @@ describe("event helpers", () => {
 
     expect(ctas).toEqual([
       { kind: "tickets", label: "Tickets", url: "https://tickets.example/event" },
-      { kind: "vip_tables", label: "VIP / Tables", url: "https://vip.example/event" },
       { kind: "official_event_page", label: "Official Info", url: "https://venue.example/event" },
+      { kind: "vip_tables", label: "VIP / Tables", url: "https://vip.example/event" },
     ]);
   });
 

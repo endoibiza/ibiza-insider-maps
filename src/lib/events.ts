@@ -27,6 +27,15 @@ export type PublicBookingOption = EventCta & {
 
 export type PublicEventRecord = EventRecord & CommercialEventFields;
 
+const CTA_KIND_ORDER: Record<EventCtaKind, number> = {
+  tickets: 10,
+  official_event_page: 20,
+  vip_tables: 30,
+  guest_list: 40,
+  preregister: 50,
+  more_info: 60,
+};
+
 const CANONICAL_VENUE_NAMES: Record<string, string> = {
   "club chinois": "Chinois",
   "chinois ibiza": "Chinois",
@@ -114,7 +123,7 @@ export const getCommercialOptionLabels = (
 ) => {
   const optionLabels = (event.booking_options ?? [])
     .filter((option) => ["tickets", "guest_list", "vip_tables", "preregister"].includes(option.kind))
-    .sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100))
+    .sort((a, b) => CTA_KIND_ORDER[a.kind] - CTA_KIND_ORDER[b.kind] || (a.priority ?? 100) - (b.priority ?? 100))
     .map((option) => option.label);
   if (optionLabels.length > 0) return [...new Set(optionLabels)];
 
@@ -141,7 +150,7 @@ export const getEventCtas = (
 
   (event.booking_options ?? [])
     .filter((option) => option.url)
-    .sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100))
+    .sort((a, b) => CTA_KIND_ORDER[a.kind] - CTA_KIND_ORDER[b.kind] || (a.priority ?? 100) - (b.priority ?? 100))
     .forEach((option) => addCta({ kind: option.kind, label: option.label, url: option.url }));
 
   if (ctas.length > 0) return ctas;
