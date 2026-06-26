@@ -126,6 +126,12 @@ jobs:
           LIMIT: "2000"
         run: node scripts/event-booking-options-cleanup.mjs
 
+      - name: Backfill missing visible event URL options
+        env:
+          APPLY: ${{ env.APPLY_TICKET_REPAIRS }}
+          LIMIT: "2000"
+        run: node scripts/event-booking-options-backfill-visible-urls.mjs
+
       - name: Audit booking option health
         env:
           START_DATE: ""
