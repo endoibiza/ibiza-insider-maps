@@ -1,0 +1,30 @@
+name: Eden Galactica lineup cleanup
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Apply clean Eden Galactica lineup text to Supabase"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Clean Eden Galactica lineups
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          APPLY: ${{ inputs.apply }}
+        run: node scripts/eden-galactica-lineup-cleanup.mjs
