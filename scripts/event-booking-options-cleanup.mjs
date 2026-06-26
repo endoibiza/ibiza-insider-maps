@@ -45,25 +45,26 @@ for (const option of options || []) {
   byEvent.set(option.ibiza_event_id, [...(byEvent.get(option.ibiza_event_id) || []), option]);
 }
 
-const fourvenuesMoreInfo = (options || []).filter(
-  (option) =>
-    option.active === true &&
-    option.kind === "more_info" &&
-    option.provider === "fourvenues" &&
-    /https?:\/\/([^/]+\.)?fourvenues\.com\//i.test(option.url),
-);
+const moreInfoOptions = (options || []).filter((option) => option.active === true && option.kind === "more_info");
 
 const staleTargets = [];
 const kept = [];
 
-for (const option of fourvenuesMoreInfo) {
+for (const option of moreInfoOptions) {
   const siblings = (byEvent.get(option.ibiza_event_id) || []).filter((sibling) => sibling.id !== option.id);
   const better = siblings.filter((sibling) => sibling.active === true && betterKinds.has(sibling.kind));
+  const isFourvenuesMoreInfo =
+    option.provider === "fourvenues" && /https?:\/\/([^/]+\.)?fourvenues\.com\//i.test(option.url);
+  const duplicatesBetterUrl = better.some((sibling) => sibling.url === option.url);
+  const isFourvenuesManualMoreInfo =
+    option.provider === "manual" && /https?:\/\/([^/]+\.)?fourvenues\.com\//i.test(option.url);
 
-  if (better.length > 0) {
+  if (better.length > 0 && (isFourvenuesMoreInfo || isFourvenuesManualMoreInfo || duplicatesBetterUrl)) {
     staleTargets.push({
       option,
-      reason: "same_event_has_more_specific_booking_option",
+      reason: duplicatesBetterUrl
+        ? "same_event_has_more_specific_booking_option_with_same_url"
+        : "same_event_has_more_specific_booking_option",
       better: better.map((sibling) => `${sibling.kind}:${sibling.provider}:${sibling.label}`),
     });
   } else {
@@ -81,9 +82,9 @@ console.log(
     {
       apply: APPLY,
       active_options_scanned: options?.length ?? 0,
-      active_fourvenues_more_info: fourvenuesMoreInfo.length,
+      active_more_info: moreInfoOptions.length,
       stale_targets_to_deactivate: staleTargets.length,
-      kept_fourvenues_more_info: kept.length,
+      kept_more_info: kept.length,
       target_preview: staleTargets.slice(0, 50).map((target) => ({
         option_id: target.option.id,
         event_id: target.option.ibiza_event_id,
@@ -130,8 +131,8 @@ await request("sync_log", {
     metadata: {
       status: "success",
       repair: "Deactivated stale Fourvenues iframe More Info options when a more specific public booking option exists.",
-      active_fourvenues_more_info: fourvenuesMoreInfo.length,
-      kept_fourvenues_more_info: kept.length,
+      active_more_info: moreInfoOptions.length,
+      kept_more_info: kept.length,
     },
   }),
 });
