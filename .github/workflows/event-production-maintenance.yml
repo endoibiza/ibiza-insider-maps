@@ -1,0 +1,106 @@
+name: Event production maintenance
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply_ticket_repairs:
+        description: "Apply deterministic ticket-option repairs"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      check_cova_channel_manager:
+        description: "Check whether Cova Santa events are exposed through Fourvenues Channel Manager"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      run_repair_report:
+        description: "Generate season repair report artifact"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+  schedule:
+    # Daily cloud heartbeat. In summer this is 06:35 Europe/Madrid.
+    - cron: "35 4 * * *"
+
+jobs:
+  maintenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      APPLY_TICKET_REPAIRS: ${{ github.event_name == 'schedule' && 'true' || inputs.apply_ticket_repairs }}
+      COVA_SANTA_FOURVENUES_HOST_ID: Vlcq9gl8300dm018kfuq3908zGLrHrFN
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Refresh Fourvenues host access
+        env:
+          TARGET: auth
+          DRY_RUN: "true"
+          HORIZON_DAYS: "7"
+          INCLUDE_RECORDS: "false"
+          INCLUDE_VIP_AVAILABILITY: "false"
+          LIMIT: "100"
+        run: node scripts/fourvenues-service-sync.mjs
+
+      - name: Check Cova Santa Channel Manager exposure
+        if: github.event_name == 'schedule' || inputs.check_cova_channel_manager == 'true'
+        env:
+          TARGET: events
+          DRY_RUN: "true"
+          ORGANIZATION_ID: ${{ env.COVA_SANTA_FOURVENUES_HOST_ID }}
+          HORIZON_DAYS: "180"
+          INCLUDE_RECORDS: "false"
+          INCLUDE_VIP_AVAILABILITY: "true"
+          LIMIT: "100"
+        run: node scripts/fourvenues-service-sync.mjs
+
+      - name: Maintain Cova Santa ticket options
+        env:
+          APPLY: ${{ env.APPLY_TICKET_REPAIRS }}
+          LIMIT: "140"
+        run: node scripts/cova-ticket-options-seed.mjs
+
+      - name: Maintain Eden ticket options
+        env:
+          APPLY: ${{ env.APPLY_TICKET_REPAIRS }}
+          LIMIT: "140"
+        run: node scripts/eden-ticket-options-seed.mjs
+
+      - name: Maintain Ushuaia ticket options
+        env:
+          APPLY: ${{ env.APPLY_TICKET_REPAIRS }}
+          LIMIT: "140"
+        run: node scripts/ushuaia-ticket-options-seed.mjs
+
+      - name: Generate season repair report
+        if: github.event_name == 'schedule' || inputs.run_repair_report == 'true'
+        env:
+          WINDOW_DAYS: "180"
+          OUTPUT_FILE: event-season-repair-report.md
+        run: node scripts/event-season-repair-report.mjs
+
+      - name: Upload season repair report
+        if: github.event_name == 'schedule' || inputs.run_repair_report == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: event-production-maintenance-report
+          path: event-season-repair-report.md
