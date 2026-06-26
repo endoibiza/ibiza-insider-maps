@@ -99,6 +99,9 @@ const isFourvenuesOwnedChinois = (row) =>
   String(row.notion_page_id || "").startsWith("fourvenues:") ||
   /fourvenues\.com\/iframe\/ibiza-maps/i.test(String(row.event_url || ""));
 
+const isChannelManagerRow = (row) =>
+  Boolean(row.fourvenues_event_id) || /fourvenues\.com\/iframe\/ibiza-maps/i.test(String(row.event_url || ""));
+
 const eventText = (row) => `${row.event_name || ""} ${row.event_series || ""} ${row.lineup_details || ""}`;
 
 const scoreMatch = (row, candidate) => {
@@ -178,8 +181,8 @@ const chooseCandidate = (row, candidatesByDate) => {
 const endDate = addDays(START_DATE, HORIZON_DAYS);
 const [rows, candidates] = await Promise.all([fetchAllRows(START_DATE, endDate), scrapeChinoisPublicEvents(START_DATE, endDate)]);
 const visibleRows = rows.filter(isVisible);
-const fourvenuesRows = visibleRows.filter(isFourvenuesOwnedChinois);
-const legacyRows = visibleRows.filter((row) => !isFourvenuesOwnedChinois(row));
+const fourvenuesRows = visibleRows.filter(isChannelManagerRow);
+const duplicateCandidateRows = visibleRows.filter((row) => !isChannelManagerRow(row));
 
 const candidatesByDate = new Map();
 for (const candidate of candidates) {
@@ -208,7 +211,7 @@ for (const row of fourvenuesRows) {
   const match = chooseCandidate(row, candidatesByDate);
   if (!match) continue;
 
-  const sameDateLegacy = legacyRows
+  const sameDateLegacy = duplicateCandidateRows
     .map((legacy) => ({ legacy, score: scoreMatch(legacy, match.candidate) }))
     .filter((item) => item.legacy.date === row.date && item.score >= 4)
     .sort((a, b) => b.score - a.score);
@@ -220,6 +223,14 @@ for (const row of fourvenuesRows) {
       option.active &&
       option.kind === "official_event_page" &&
       /https:\/\/chinois\.com\/events-and-tickets\/?$/i.test(option.url),
+  );
+  const weakerOfficialOptions = existingOptions.filter(
+    (option) =>
+      option.active &&
+      option.kind === "official_event_page" &&
+      option.url.replace(/\/$/, "") !== match.candidate.url.replace(/\/$/, "") &&
+      (/https:\/\/chinois\.com\/events(?:\/|-and-tickets\/?$)/i.test(option.url) ||
+        /https:\/\/web\.fourvenues\.com\/(?:en\/)?(?:iframe\/)?chinois-ibiza/i.test(option.url)),
   );
   const hasExactOption = existingOptions.some(
     (option) => option.active && option.url.replace(/\/$/, "") === match.candidate.url.replace(/\/$/, ""),
@@ -264,13 +275,18 @@ for (const row of fourvenuesRows) {
     option,
     hasExactOption,
     broadFallbackOptions,
+    weakerOfficialOptions,
     duplicateLegacy,
     eventUpdate,
   });
 }
 
 const broadFallbackIds = [
-  ...new Set(actions.flatMap((action) => action.broadFallbackOptions.map((option) => option.id))),
+  ...new Set(
+    actions.flatMap((action) =>
+      [...action.broadFallbackOptions, ...action.weakerOfficialOptions].map((option) => option.id),
+    ),
+  ),
 ];
 const duplicateLegacyRows = [
   ...new Map(
@@ -288,10 +304,10 @@ const summary = {
   scraped_public_fourvenues_events: candidates.length,
   visible_chinois_rows: visibleRows.length,
   fourvenues_rows: fourvenuesRows.length,
-  legacy_rows: legacyRows.length,
+  duplicate_candidate_rows: duplicateCandidateRows.length,
   matched_fourvenues_rows: actions.length,
   exact_options_to_insert_or_refresh: actions.filter((action) => !action.hasExactOption).length,
-  broad_fallback_options_to_deactivate: broadFallbackIds.length,
+  weaker_official_options_to_deactivate: broadFallbackIds.length,
   duplicate_legacy_rows_to_hide: duplicateLegacyRows.length,
   preview: actions.slice(0, 50).map((action) => ({
     date: action.row.date,
@@ -302,6 +318,7 @@ const summary = {
     score: action.matchScore,
     has_exact_option: action.hasExactOption,
     broad_fallback_count: action.broadFallbackOptions.length,
+    weaker_official_count: action.weakerOfficialOptions.length,
     duplicate_legacy_event: action.duplicateLegacy?.event_name || null,
   })),
 };
@@ -340,7 +357,7 @@ for (const optionId of broadFallbackIds) {
         ...(option?.metadata || {}),
         deactivated_by: "chinois-exact-official-links-repair",
         deactivated_at: now,
-        deactivation_reason: "replaced_broad_chinois_events_and_tickets_fallback_with_exact_public_fourvenues_event_url",
+        deactivation_reason: "replaced_weaker_chinois_official_link_with_exact_public_fourvenues_event_url",
       },
     }),
   });
@@ -367,7 +384,7 @@ await request("sync_log", {
       status: "success",
       summary,
       repair:
-        "Seeded exact Chinois public Fourvenues event links, deactivated broad Chinois events fallback options, and hid matched duplicate legacy rows.",
+        "Seeded exact Chinois public Fourvenues event links, deactivated weaker Chinois official fallback options, and hid matched duplicate legacy rows.",
     },
   }),
 });
@@ -376,7 +393,7 @@ console.log(
   JSON.stringify(
     {
       inserted_or_refreshed_exact_options: actions.length,
-      deactivated_broad_fallback_options: broadFallbackIds.length,
+      deactivated_weaker_official_options: broadFallbackIds.length,
       hidden_duplicate_legacy_rows: duplicateLegacyRows.length,
     },
     null,
