@@ -19,6 +19,14 @@ on:
         options:
           - "true"
           - "false"
+      sync_chinois_channel_manager:
+        description: "Refresh and reconcile Chinois Channel Manager events"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
       run_repair_report:
         description: "Generate season repair report artifact"
         required: true
@@ -40,6 +48,7 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       APPLY_TICKET_REPAIRS: ${{ github.event_name == 'schedule' && 'true' || inputs.apply_ticket_repairs }}
       COVA_SANTA_FOURVENUES_HOST_ID: Vlcq9gl8300dm018kfuq3908zGLrHrFN
+      CHINOIS_FOURVENUES_HOST_ID: wlw4t6xtf013101dd1sstd9pw5199tkW
     steps:
       - uses: actions/checkout@v4
 
@@ -72,6 +81,26 @@ jobs:
           INCLUDE_VIP_AVAILABILITY: "true"
           LIMIT: "100"
         run: node scripts/fourvenues-service-sync.mjs
+
+      - name: Sync Chinois Channel Manager events
+        if: github.event_name == 'schedule' || inputs.sync_chinois_channel_manager == 'true'
+        env:
+          TARGET: events
+          DRY_RUN: "false"
+          ORGANIZATION_ID: ${{ env.CHINOIS_FOURVENUES_HOST_ID }}
+          HORIZON_DAYS: "180"
+          INCLUDE_RECORDS: "false"
+          INCLUDE_VIP_AVAILABILITY: "true"
+          LIMIT: "100"
+        run: node scripts/fourvenues-service-sync.mjs
+
+      - name: Reconcile Chinois Channel Manager rows
+        if: github.event_name == 'schedule' || inputs.sync_chinois_channel_manager == 'true'
+        env:
+          ORGANIZATION_ID: ${{ env.CHINOIS_FOURVENUES_HOST_ID }}
+          HORIZON_DAYS: "180"
+          APPLY: "true"
+        run: node scripts/chinois-fourvenues-reconcile.mjs
 
       - name: Maintain Cova Santa ticket options
         env:
