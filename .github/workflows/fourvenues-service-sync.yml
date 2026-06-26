@@ -1,0 +1,72 @@
+name: Fourvenues service sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Sync target"
+        required: true
+        default: "events"
+        type: choice
+        options:
+          - auth
+          - events
+      dry_run:
+        description: "Dry run event sync"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      organization_id:
+        description: "Optional Fourvenues host organization id"
+        required: false
+        default: ""
+      horizon_days:
+        description: "Days ahead to sync"
+        required: true
+        default: "7"
+      include_records:
+        description: "Include returned records in dry-run log"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      include_vip_availability:
+        description: "Check VIP/table availability"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      limit:
+        description: "Page size"
+        required: true
+        default: "100"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run Fourvenues service sync
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TARGET: ${{ inputs.target }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          ORGANIZATION_ID: ${{ inputs.organization_id }}
+          HORIZON_DAYS: ${{ inputs.horizon_days }}
+          INCLUDE_RECORDS: ${{ inputs.include_records }}
+          INCLUDE_VIP_AVAILABILITY: ${{ inputs.include_vip_availability }}
+          LIMIT: ${{ inputs.limit }}
+        run: node scripts/fourvenues-service-sync.mjs
