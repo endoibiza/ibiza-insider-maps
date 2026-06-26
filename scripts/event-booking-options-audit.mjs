@@ -63,6 +63,7 @@ const output = {
     more_info_with_better_option: [],
     fourvenues_more_info_only: [],
     duplicate_url_multiple_kinds: [],
+    duplicate_button_labels: [],
     ticketless_fourvenues_events: [],
     no_booking_options: [],
   },
@@ -172,6 +173,25 @@ for (const venue of VENUES) {
           slug: event.slug,
           url,
           options: urlOptions.map((option) => `${option.kind}:${option.provider}:${option.label}`),
+        });
+      }
+    }
+
+    const byKindLabel = new Map();
+    for (const option of eventOptions) {
+      const key = `${option.kind}:${String(option.label || "").trim().toLowerCase()}`;
+      byKindLabel.set(key, [...(byKindLabel.get(key) || []), option]);
+    }
+    for (const [kindLabel, labelOptions] of byKindLabel.entries()) {
+      const urls = [...new Set(labelOptions.map((option) => option.url))];
+      if (urls.length > 1) {
+        output.suspicious.duplicate_button_labels.push({
+          venue,
+          date: event.date,
+          event_name: event.event_name,
+          slug: event.slug,
+          kind_label: kindLabel,
+          options: labelOptions.map((option) => `${option.kind}:${option.provider}:${option.label}:${option.url}`),
         });
       }
     }

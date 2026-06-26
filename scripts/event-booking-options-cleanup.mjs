@@ -34,6 +34,13 @@ const kindRank = {
   preregister: 50,
   more_info: 60,
 };
+const providerRank = {
+  fourvenues: 10,
+  ticketing_platform: 20,
+  official_venue: 30,
+  manual: 80,
+  ibiza_spotlight: 90,
+};
 
 const fetchAllActiveOptions = async () => {
   const output = [];
@@ -58,6 +65,15 @@ const moreInfoOptions = (options || []).filter((option) => option.active === tru
 const staleTargets = [];
 const kept = [];
 const duplicateUrlTargets = [];
+const duplicateLabelTargets = [];
+
+const optionSort = (a, b) => {
+  const rankDiff = (kindRank[a.kind] ?? 100) - (kindRank[b.kind] ?? 100);
+  if (rankDiff !== 0) return rankDiff;
+  const providerDiff = (providerRank[a.provider] ?? 100) - (providerRank[b.provider] ?? 100);
+  if (providerDiff !== 0) return providerDiff;
+  return Number(a.priority || 100) - Number(b.priority || 100);
+};
 
 for (const option of moreInfoOptions) {
   const siblings = (byEvent.get(option.ibiza_event_id) || []).filter((sibling) => sibling.id !== option.id);
@@ -96,11 +112,7 @@ for (const eventOptions of byEvent.values()) {
 
   for (const [url, duplicates] of byUrl.entries()) {
     if (duplicates.length < 2) continue;
-    const sorted = [...duplicates].sort((a, b) => {
-      const rankDiff = (kindRank[a.kind] ?? 100) - (kindRank[b.kind] ?? 100);
-      if (rankDiff !== 0) return rankDiff;
-      return Number(a.priority || 100) - Number(b.priority || 100);
-    });
+    const sorted = [...duplicates].sort(optionSort);
     const keeper = sorted[0];
     for (const duplicate of sorted.slice(1)) {
       duplicateUrlTargets.push({
@@ -111,10 +123,30 @@ for (const eventOptions of byEvent.values()) {
       });
     }
   }
+
+  const byKindLabel = new Map();
+  for (const option of eventOptions.filter((item) => item.active === true)) {
+    const key = `${option.kind}:${String(option.label || "").trim().toLowerCase()}`;
+    byKindLabel.set(key, [...(byKindLabel.get(key) || []), option]);
+  }
+
+  for (const [kindLabel, duplicates] of byKindLabel.entries()) {
+    if (duplicates.length < 2) continue;
+    const sorted = [...duplicates].sort(optionSort);
+    const keeper = sorted[0];
+    for (const duplicate of sorted.slice(1)) {
+      duplicateLabelTargets.push({
+        option: duplicate,
+        reason: "same_event_has_stronger_provider_for_same_button_label",
+        kept: `${keeper.kind}:${keeper.provider}:${keeper.label}`,
+        kind_label: kindLabel,
+      });
+    }
+  }
 }
 
 const targetsById = new Map();
-for (const target of [...staleTargets, ...duplicateUrlTargets]) {
+for (const target of [...staleTargets, ...duplicateUrlTargets, ...duplicateLabelTargets]) {
   targetsById.set(target.option.id, target);
 }
 const targets = [...targetsById.values()];
@@ -127,6 +159,7 @@ console.log(
       active_more_info: moreInfoOptions.length,
       stale_more_info_targets_to_deactivate: staleTargets.length,
       duplicate_url_targets_to_deactivate: duplicateUrlTargets.length,
+      duplicate_label_targets_to_deactivate: duplicateLabelTargets.length,
       total_targets_to_deactivate: targets.length,
       kept_more_info: kept.length,
       target_preview: targets.slice(0, 50).map((target) => ({
@@ -137,6 +170,7 @@ console.log(
         reason: target.reason,
         better: target.better,
         kept: target.kept,
+        kind_label: target.kind_label,
       })),
       kept_preview: kept.slice(0, 30),
     },
@@ -180,6 +214,7 @@ await request("sync_log", {
       active_more_info: moreInfoOptions.length,
       kept_more_info: kept.length,
       duplicate_url_targets: duplicateUrlTargets.length,
+      duplicate_label_targets: duplicateLabelTargets.length,
     },
   }),
 });
