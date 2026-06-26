@@ -99,8 +99,7 @@ const isFourvenuesOwnedChinois = (row) =>
   String(row.notion_page_id || "").startsWith("fourvenues:") ||
   /fourvenues\.com\/iframe\/ibiza-maps/i.test(String(row.event_url || ""));
 
-const isChannelManagerRow = (row) =>
-  Boolean(row.fourvenues_event_id) || /fourvenues\.com\/iframe\/ibiza-maps/i.test(String(row.event_url || ""));
+const isPrimaryChannelManagerRow = (row) => /fourvenues\.com\/iframe\/ibiza-maps/i.test(String(row.event_url || ""));
 
 const eventText = (row) => `${row.event_name || ""} ${row.event_series || ""} ${row.lineup_details || ""}`;
 
@@ -183,8 +182,8 @@ const chooseCandidate = (row, candidatesByDate) => {
 const endDate = addDays(START_DATE, HORIZON_DAYS);
 const [rows, candidates] = await Promise.all([fetchAllRows(START_DATE, endDate), scrapeChinoisPublicEvents(START_DATE, endDate)]);
 const visibleRows = rows.filter(isVisible);
-const fourvenuesRows = visibleRows.filter(isChannelManagerRow);
-const duplicateCandidateRows = visibleRows.filter((row) => !isChannelManagerRow(row));
+const fourvenuesRows = visibleRows.filter(isPrimaryChannelManagerRow);
+const duplicateCandidateRows = visibleRows.filter((row) => !isPrimaryChannelManagerRow(row));
 
 const candidatesByDate = new Map();
 for (const candidate of candidates) {
