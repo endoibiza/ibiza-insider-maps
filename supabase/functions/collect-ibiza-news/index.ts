@@ -266,6 +266,8 @@ const nextStoryStatus = (
     return publishDecision.publishable || !shouldRejectExistingPublishedStory(publishDecision.reason) ? "published" : "rejected";
   }
 
+  if (existingStatus === "duplicate") return "duplicate";
+
   if (isDuplicate) return "duplicate";
   if (publishDecision.publishable && request.publish && !request.dry_run) return "published";
   if (publishDecision.publishable) return "staged";
