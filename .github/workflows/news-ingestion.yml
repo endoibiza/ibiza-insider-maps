@@ -1,0 +1,99 @@
+name: Ibiza News Ingestion
+
+on:
+  schedule:
+    - cron: "45 3 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Store private evidence only; do not publish public stories or digest"
+        required: true
+        default: true
+        type: boolean
+      publish:
+        description: "Publish verified direct-source stories"
+        required: true
+        default: false
+        type: boolean
+      use_ai:
+        description: "Use capped AI translation/summarization after evidence is stored"
+        required: true
+        default: true
+        type: boolean
+      target_date:
+        description: "Europe/Madrid date, YYYY-MM-DD. Blank uses today's Madrid date."
+        required: false
+        type: string
+      source_keys:
+        description: "Optional comma-separated source keys for a small test run"
+        required: false
+        type: string
+      limit_per_source:
+        description: "Maximum candidates per source"
+        required: true
+        default: "25"
+        type: string
+
+concurrency:
+  group: ibiza-news-ingestion
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SYNC_ADMIN_TOKEN: ${{ secrets.SYNC_ADMIN_TOKEN }}
+      DRY_RUN_INPUT: ${{ github.event.inputs.dry_run || '' }}
+      PUBLISH_INPUT: ${{ github.event.inputs.publish || '' }}
+      USE_AI_INPUT: ${{ github.event.inputs.use_ai || '' }}
+      TARGET_DATE_INPUT: ${{ github.event.inputs.target_date || '' }}
+      SOURCE_KEYS_INPUT: ${{ github.event.inputs.source_keys || '' }}
+      LIMIT_PER_SOURCE_INPUT: ${{ github.event.inputs.limit_per_source || '25' }}
+    steps:
+      - name: Invoke Supabase news collector
+        run: |
+          node <<'NODE'
+          const scheduled = process.env.GITHUB_EVENT_NAME === "schedule";
+          const supabaseUrl = process.env.SUPABASE_URL;
+          const token = process.env.SYNC_ADMIN_TOKEN;
+
+          if (!supabaseUrl) throw new Error("Missing SUPABASE_URL secret");
+          if (!token) throw new Error("Missing SYNC_ADMIN_TOKEN secret");
+
+          const sourceKeys = (process.env.SOURCE_KEYS_INPUT || "")
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean);
+
+          const payload = {
+            run_type: scheduled ? "daily" : "manual",
+            dry_run: scheduled ? false : process.env.DRY_RUN_INPUT !== "false",
+            publish: scheduled ? true : process.env.PUBLISH_INPUT === "true",
+            use_ai: scheduled ? true : process.env.USE_AI_INPUT !== "false",
+            max_ai_summaries: 8,
+            limit_per_source: Number(process.env.LIMIT_PER_SOURCE_INPUT || 25),
+          };
+
+          if (process.env.TARGET_DATE_INPUT) payload.target_date = process.env.TARGET_DATE_INPUT;
+          if (sourceKeys.length > 0) payload.source_keys = sourceKeys;
+
+          console.log("Running collect-ibiza-news", JSON.stringify({ ...payload, source_keys: sourceKeys }, null, 2));
+
+          const response = await fetch(`${supabaseUrl.replace(/\/$/, "")}/functions/v1/collect-ibiza-news`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-sync-admin-token": token,
+            },
+            body: JSON.stringify(payload),
+          });
+
+          const text = await response.text();
+          console.log(text);
+
+          if (!response.ok) {
+            throw new Error(`collect-ibiza-news failed with ${response.status}`);
+          }
+          NODE
