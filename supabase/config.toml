@@ -18,6 +18,9 @@ verify_jwt = false
 [functions.collect-ibiza-weather]
 verify_jwt = false
 
+[functions.collect-ibiza-signals]
+verify_jwt = false
+
 [functions.validate-promo-code]
 verify_jwt = false
 

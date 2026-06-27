@@ -22,7 +22,7 @@ const PayPalButton: React.FC<PayPalButtonProps> = ({ onSuccess, onError }) => {
     
     // In production, this would integrate with PayPal's SDK
     const confirmed = window.confirm(
-      "💳 PayPal Payment Simulation\n\nPrice: €29.99 (one-time)\nProduct: Ibiza Insider Premium Access\n\nClick OK to simulate successful payment."
+      "PayPal Payment Simulation\n\nPrice: EUR 29.99 (one-time)\nProduct: Ibiza Maps Premium Access\n\nClick OK to simulate successful payment."
     );
     
     if (confirmed) {

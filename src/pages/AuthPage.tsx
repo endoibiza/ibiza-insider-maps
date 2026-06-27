@@ -85,7 +85,7 @@ const AuthPage = () => {
       if (promoCode) {
         toast({
           title: "Welcome to Premium!",
-          description: "Your promo code was applied successfully. Welcome to Ibiza Insider!",
+          description: "Your promo code was applied successfully. Welcome to Ibiza Maps!",
         });
       } else {
         toast({
@@ -101,9 +101,9 @@ const AuthPage = () => {
   return (
     <>
       <SEOHead 
-        title="Sign In - Ibiza Insider Premium Access"
+        title="Sign In - Ibiza Maps Premium Access"
         description="Sign in to access 1000+ curated Ibiza & Formentera locations. Unlock interactive maps, exclusive lists & insider travel guides."
-        keywords="Ibiza Insider login, premium access, sign in, unlock Ibiza guide"
+        keywords="Ibiza Maps login, premium access, sign in, unlock Ibiza guide"
         canonicalPath="/auth"
       />
       <div className="min-h-screen bg-gradient-to-br from-background via-background/95 to-primary/5 flex items-center justify-center p-4">
@@ -120,7 +120,7 @@ const AuthPage = () => {
         <Card className="border-border/40 backdrop-blur-sm shadow-xl">
           <CardHeader className="text-center pb-4">
             <CardTitle className="text-2xl font-bold">
-              Access Ibiza Insider
+              Access Ibiza Maps
             </CardTitle>
             <p className="text-muted-foreground text-sm">
               Sign in to access premium content

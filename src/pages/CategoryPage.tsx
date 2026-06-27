@@ -171,7 +171,7 @@ const CategoryPage = () => {
   // Update page title and meta for SEO
   useEffect(() => {
     if (category) {
-      document.title = `${category.title} - Ibiza Insider`;
+      document.title = `${category.title} - Ibiza Maps`;
       
       // Add meta description
       const metaDescription = document.querySelector('meta[name="description"]');

@@ -1,5 +1,6 @@
 User-agent: *
 Allow: /
+Disallow: /ops/
 
 # AI/LLM Crawlers
 User-agent: GPTBot
@@ -35,4 +36,4 @@ User-agent: facebookexternalhit
 Allow: /
 
 # Sitemap
-Sitemap: https://ibiza-insider.lovable.app/sitemap.xml
+Sitemap: https://ibiza-maps.com/sitemap.xml

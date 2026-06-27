@@ -11,12 +11,17 @@ const Navigation = () => {
   const categories = getCategories();
   const [isOpen, setIsOpen] = React.useState(false);
 
-  const navItems = [
+  type NavItem = {
+    name: string;
+    href: string;
+    icon?: React.ComponentType<{ className?: string }>;
+  };
+
+  const navItems: NavItem[] = [
     { name: "Explore All", href: "/map", icon: MapPinIcon },
     ...categories.map(category => ({
       name: category,
       href: `/category/${category.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-')}`,
-      icon: undefined as any,
     }))
   ];
 
@@ -30,7 +35,7 @@ const Navigation = () => {
               <MapPinIcon className="w-4 h-4 text-primary-foreground" />
             </div>
             <span className="text-xl font-bold bg-gradient-hero bg-clip-text text-transparent">
-              Ibiza Insider
+              Ibiza Maps
             </span>
           </Link>
 

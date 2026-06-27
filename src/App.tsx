@@ -14,6 +14,7 @@ import WeatherPage from "./pages/WeatherPage";
 import NewsPage from "./pages/NewsPage";
 import EventsPage from "./pages/EventsPage";
 import EventDetailPage from "./pages/EventDetailPage";
+import SignalOpsPage from "./pages/SignalOpsPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -37,6 +38,7 @@ const App = () => (
               <Route path="/news" element={<NewsPage />} />
               <Route path="/events" element={<EventsPage />} />
               <Route path="/events/:slug" element={<EventDetailPage />} />
+              <Route path="/ops/signals" element={<SignalOpsPage />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

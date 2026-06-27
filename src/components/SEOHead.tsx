@@ -6,19 +6,25 @@ interface SEOHeadProps {
   keywords?: string;
   canonicalPath?: string;
   ogImage?: string;
+  robots?: string;
   structuredData?: object;
 }
+
+const SITE_URL = "https://ibiza-maps.com";
+const SITE_NAME = "Ibiza Maps";
+const DEFAULT_OG_IMAGE = `${SITE_URL}/ibiza-hero.jpg`;
 
 const SEOHead = ({ 
   title, 
   description, 
   keywords = "Ibiza guide, Ibiza travel, Formentera, Ibiza beaches, Ibiza clubs, Ibiza restaurants, Ibiza insider tips",
   canonicalPath = "",
-  ogImage = "https://lovable.dev/opengraph-image-p98pqg.png",
+  ogImage = DEFAULT_OG_IMAGE,
+  robots = "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1",
   structuredData
 }: SEOHeadProps) => {
-  const fullTitle = title.includes('Ibiza Insider') ? title : `${title} | Ibiza Insider`;
-  const canonicalUrl = `https://ibiza-insider.lovable.app${canonicalPath}`;
+  const fullTitle = title.includes(SITE_NAME) ? title : `${title} | ${SITE_NAME}`;
+  const canonicalUrl = `${SITE_URL}${canonicalPath}`;
 
   return (
     <Helmet>
@@ -33,7 +39,7 @@ const SEOHead = ({
       <meta property="og:url" content={canonicalUrl} />
       <meta property="og:image" content={ogImage} />
       <meta property="og:type" content="website" />
-      <meta property="og:site_name" content="Ibiza Insider" />
+      <meta property="og:site_name" content={SITE_NAME} />
       <meta property="og:locale" content="en_US" />
       
       {/* Twitter */}
@@ -43,8 +49,8 @@ const SEOHead = ({
       <meta name="twitter:image" content={ogImage} />
       
       {/* Additional SEO */}
-      <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
-      <meta name="googlebot" content="index, follow" />
+      <meta name="robots" content={robots} />
+      <meta name="googlebot" content={robots.includes("noindex") ? "noindex, nofollow" : "index, follow"} />
       <meta name="language" content="English" />
       <meta name="revisit-after" content="7 days" />
       
