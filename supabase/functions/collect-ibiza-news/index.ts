@@ -147,6 +147,11 @@ const sourceDomain = (url: string) => {
   }
 };
 
+const SPANISH_TEXT_PATTERN =
+  /\b(el|la|los|las|un|una|unos|unas|que|para|por|con|sin|sobre|desde|hasta|este|esta|estos|estas|del|al|se|sus|más|año|años|isla|playa|viviendas|trabajadores|gobierno|ayuntamiento|consell|policía|fiestas|abre|regresa|desembarca|protagoniza|protagonizan|continúa|celebra)\b/i;
+
+const looksSpanish = (value: string) => SPANISH_TEXT_PATTERN.test(value);
+
 const summarizeWithAi = async (candidate: ClassifiedNewsCandidate, evidenceHash: string, enabled: boolean) => {
   const fallbackHeadline = normalizeWhitespace(candidate.headline);
   const fallbackSummary = normalizeWhitespace(candidate.summary_seed || candidate.headline);
@@ -172,7 +177,15 @@ const summarizeWithAi = async (candidate: ClassifiedNewsCandidate, evidenceHash:
 
   const model = "google/gemini-2.5-flash";
   const prompt = {
-    task: "Translate and summarize verified Ibiza news metadata into English. Use only the provided fields. Do not add facts, quotes, URLs, names, dates, or claims that are not present.",
+    task: "Translate verified Ibiza news metadata into English for an English-only public local-news digest. Use only the provided fields. Do not add facts, quotes, URLs, names, dates, or claims that are not present.",
+    hard_rules: [
+      "Return English only for headline and summary.",
+      "Do not copy Spanish/Catalan sentence wording into the output.",
+      "Preserve proper nouns, venue names, artist names, place names, official acronyms, and quoted names.",
+      "Translate all normal words such as verbs, adjectives, dates, and article framing into natural English.",
+      "Bad output examples: 'regresa', 'desembarca', 'protagonizan', 'se despide', 'abre', 'continúa'.",
+      "Good output style: 'returns', 'lands at', 'headline', 'says goodbye', 'opens', 'continues'.",
+    ],
     source: candidate.source_name,
     source_url: candidate.canonical_url,
     source_date: candidate.published_at,
@@ -185,39 +198,57 @@ const summarizeWithAi = async (candidate: ClassifiedNewsCandidate, evidenceHash:
   };
 
   try {
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: "You rewrite verified source metadata for a public local-news digest. Return strict JSON only." },
-          { role: "user", content: JSON.stringify(prompt) },
-        ],
-        temperature: 0.1,
-      }),
-    });
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are an English-only translator/editor for Ibiza Maps. Return strict JSON only with English headline and English summary. Never output Spanish/Catalan prose.",
+            },
+            {
+              role: "user",
+              content: JSON.stringify({
+                ...prompt,
+                retry_instruction: attempt === 2
+                  ? "Your previous output still looked Spanish. Rewrite again in English only. Keep proper nouns, but translate the sentence."
+                  : undefined,
+              }),
+            },
+          ],
+          temperature: 0,
+        }),
+      });
 
-    if (!response.ok) {
-      console.warn("AI summary skipped", response.status, await response.text());
-      return { headline: fallbackHeadline, summary: fallbackSummary, model: null, hash: null };
+      if (!response.ok) {
+        console.warn("AI summary skipped", response.status, await response.text());
+        return { headline: fallbackHeadline, summary: fallbackSummary, model: null, hash: null };
+      }
+
+      const data = await response.json();
+      const content = String(data.choices?.[0]?.message?.content || "").replace(/```json|```/g, "").trim();
+      const parsed = JSON.parse(content) as { headline?: string; summary?: string };
+      const headline = normalizeWhitespace(parsed.headline || fallbackHeadline).slice(0, 180);
+      const summary = normalizeWhitespace(parsed.summary || fallbackSummary).slice(0, 700);
+
+      if (attempt === 1 && looksSpanish(`${headline} ${summary}`)) continue;
+
+      return {
+        headline,
+        summary,
+        model,
+        hash: await sha256(`${evidenceHash}|${headline}|${summary}`),
+      };
     }
 
-    const data = await response.json();
-    const content = String(data.choices?.[0]?.message?.content || "").replace(/```json|```/g, "").trim();
-    const parsed = JSON.parse(content) as { headline?: string; summary?: string };
-    const headline = normalizeWhitespace(parsed.headline || fallbackHeadline).slice(0, 180);
-    const summary = normalizeWhitespace(parsed.summary || fallbackSummary).slice(0, 700);
-
-    return {
-      headline,
-      summary,
-      model,
-      hash: await sha256(`${evidenceHash}|${headline}|${summary}`),
-    };
+    return { headline: fallbackHeadline, summary: fallbackSummary, model: null, hash: null };
   } catch (error) {
     console.warn("AI summary fallback", error);
     return { headline: fallbackHeadline, summary: fallbackSummary, model: null, hash: null };
