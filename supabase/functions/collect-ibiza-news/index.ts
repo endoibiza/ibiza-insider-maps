@@ -227,13 +227,21 @@ const summarizeWithAi = async (candidate: ClassifiedNewsCandidate, evidenceHash:
 const getExistingStory = async (supabase: SupabaseClient, sourceKey: string, canonicalUrl: string) => {
   const { data, error } = await supabase
     .from("ibiza_news_stories")
-    .select("id,status,evidence_hash,summary,headline")
+    .select("id,status,evidence_hash,summary,headline,ai_summary_model,ai_summary_hash")
     .eq("source_key", sourceKey)
     .eq("canonical_url", canonicalUrl)
     .maybeSingle();
 
   if (error) throw error;
-  return data as { id: string; status: string; evidence_hash: string; summary: string; headline: string } | null;
+  return data as {
+    id: string;
+    status: string;
+    evidence_hash: string;
+    summary: string;
+    headline: string;
+    ai_summary_model: string | null;
+    ai_summary_hash: string | null;
+  } | null;
 };
 
 const findSemanticDuplicate = async (supabase: SupabaseClient, candidate: ClassifiedNewsCandidate) => {
@@ -415,14 +423,28 @@ serve(async (req) => {
 
           const nextStatus = nextStoryStatus(existingStory?.status, isDuplicate, publishDecision, request);
 
+          const canPreserveExistingAiSummary = Boolean(
+            existingStory?.ai_summary_hash &&
+              existingStory.evidence_hash === evidenceHash &&
+              existingStory.headline &&
+              existingStory.summary,
+          );
+          const needsAiSummary = !existingStory || existingStory.evidence_hash !== evidenceHash || !existingStory.ai_summary_hash;
           const canUseAi = Boolean(
-              publishDecision.publishable &&
+            publishDecision.publishable &&
               !request.dry_run &&
               request.use_ai &&
               aiSummariesUsed < request.max_ai_summaries &&
-              (!existingStory || existingStory.evidence_hash !== evidenceHash),
+              needsAiSummary,
           );
-          const summary = await summarizeWithAi(classified, evidenceHash, canUseAi);
+          const summary = canPreserveExistingAiSummary && !canUseAi
+            ? {
+              headline: existingStory!.headline,
+              summary: existingStory!.summary,
+              model: existingStory!.ai_summary_model,
+              hash: existingStory!.ai_summary_hash,
+            }
+            : await summarizeWithAi(classified, evidenceHash, canUseAi);
           if (summary.model) aiSummariesUsed += 1;
 
           const storyPayload = {
