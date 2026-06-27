@@ -12,8 +12,8 @@ const WeatherPage = () => {
     "@context": "https://schema.org",
     "@type": "WebPage",
     "name": "Ibiza Weather Forecast",
-    "description": "Real-time weather conditions and forecasts for Ibiza from multiple meteorological sources",
-    "url": "https://ibiza-insider.lovable.app/weather",
+    "description": "Source-backed Ibiza weather, sea state, official alerts, sunrise and sunset, and beach-condition guidance.",
+    "url": "https://ibiza-maps.com/weather",
     "about": {
       "@type": "Place",
       "name": "Ibiza, Balearic Islands, Spain"
@@ -23,9 +23,9 @@ const WeatherPage = () => {
   return (
     <>
       <SEOHead 
-        title="Ibiza Weather Forecast - Real-Time Conditions & Forecasts"
-        description="Current Ibiza weather from AEMET, AccuWeather, Windy & ECMWF. Island-wide forecasts, wind, waves, jellyfish alerts & beach conditions."
-        keywords="Ibiza weather, Ibiza forecast, AEMET Ibiza, beach conditions, wind forecast, wave report"
+        title="Ibiza Weather - Source-Backed Forecasts, Sea Conditions & Alerts"
+        description="Daily Ibiza weather, wind, sea state, official AEMET alerts when available, sunrise and sunset, and beach-condition guidance with source timestamps."
+        keywords="Ibiza weather, Ibiza forecast, AEMET Ibiza, beach conditions, wind forecast, wave report, Ibiza sea conditions"
         canonicalPath="/weather"
         structuredData={structuredData}
       />
@@ -62,11 +62,12 @@ const WeatherPage = () => {
           </div>
           
           <h1 className="text-4xl md:text-5xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-            Ibiza Weather Report
+            Ibiza Weather, Sea & Beach Conditions
           </h1>
           
           <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
-            Real-time weather data aggregated from multiple trusted sources including AEMET, AccuWeather, Windy, ECMWF, and more
+            Stored daily reports from official and compliant free sources, with timestamps, source health, sea state, wind,
+            sunrise and sunset, and coast-by-coast beach guidance.
           </p>
 
           {/* Weather Info Cards */}
@@ -85,7 +86,7 @@ const WeatherPage = () => {
             </div>
             <div className="bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
               <AlertTriangle className="w-6 h-6 text-primary mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">Weather Alerts</p>
+              <p className="text-sm text-muted-foreground">Official Alerts</p>
             </div>
           </div>
         </div>

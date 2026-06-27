@@ -1,0 +1,101 @@
+name: Ibiza Weather Production Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_migration:
+        description: "Apply the weather Supabase migration"
+        required: true
+        default: true
+        type: boolean
+      deploy_functions:
+        description: "Deploy weather Edge Functions"
+        required: true
+        default: true
+        type: boolean
+      run_publish_after_deploy:
+        description: "Run the weather collector after deploy"
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: ibiza-weather-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SYNC_ADMIN_TOKEN: ${{ secrets.SYNC_ADMIN_TOKEN }}
+      AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
+      PROJECT_REF: zqgsgrwtxufxebaujegn
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Check deploy secrets
+        run: |
+          if [ "${{ inputs.deploy_migration }}" = "true" ] || [ "${{ inputs.deploy_functions }}" = "true" ]; then
+            test -n "$SUPABASE_ACCESS_TOKEN" || (echo "Missing SUPABASE_ACCESS_TOKEN secret" && exit 1)
+          fi
+          if [ "${{ inputs.deploy_migration }}" = "true" ]; then
+            test -n "$SUPABASE_DB_PASSWORD" || (echo "Missing SUPABASE_DB_PASSWORD secret" && exit 1)
+          fi
+          test -n "$SUPABASE_URL" || (echo "Missing SUPABASE_URL secret" && exit 1)
+          test -n "$SYNC_ADMIN_TOKEN" || (echo "Missing SYNC_ADMIN_TOKEN secret" && exit 1)
+          test -n "$AEMET_API_KEY" || echo "AEMET_API_KEY is not configured; weather will run keyless until it is added"
+
+      - name: Install Supabase CLI
+        if: inputs.deploy_migration == true || inputs.deploy_functions == true
+        run: npm install --global supabase@latest
+
+      - name: Link Supabase project
+        if: inputs.deploy_migration == true
+        run: supabase link --project-ref "$PROJECT_REF"
+
+      - name: Apply weather migration
+        if: inputs.deploy_migration == true
+        run: supabase db push
+
+      - name: Deploy weather collector
+        if: inputs.deploy_functions == true
+        run: supabase functions deploy collect-ibiza-weather --project-ref "$PROJECT_REF"
+
+      - name: Deploy weather compatibility reader
+        if: inputs.deploy_functions == true
+        run: supabase functions deploy get-weather --project-ref "$PROJECT_REF"
+
+      - name: Set AEMET Edge Function secret
+        if: inputs.deploy_functions == true && env.AEMET_API_KEY != ''
+        run: supabase secrets set AEMET_API_KEY="$AEMET_API_KEY" --project-ref "$PROJECT_REF"
+
+      - name: Publish first source-backed weather report
+        if: inputs.run_publish_after_deploy == true
+        run: |
+          node <<'NODE'
+          const response = await fetch(`${process.env.SUPABASE_URL.replace(/\/$/, "")}/functions/v1/collect-ibiza-weather`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-sync-admin-token": process.env.SYNC_ADMIN_TOKEN,
+            },
+            body: JSON.stringify({
+              run_type: "manual",
+              dry_run: false,
+              publish: true,
+              forecast_days: 7,
+            }),
+          });
+
+          const text = await response.text();
+          console.log(text);
+          if (!response.ok) throw new Error(`collect-ibiza-weather failed with ${response.status}`);
+          NODE

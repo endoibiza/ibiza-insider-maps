@@ -413,7 +413,7 @@ const HomePage = () => {
           <div className="text-center max-w-3xl mx-auto">
             <h2 className="text-3xl font-bold mb-4">Ibiza Events</h2>
             <p className="text-muted-foreground mb-6">
-              Stay updated with the latest club nights, festivals, and local events happening across the island.
+              Plan the day with source-backed events, daily weather, local news, and the island maps in one place.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Button asChild size="lg" className="bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:from-purple-600 hover:to-pink-600 shadow-lg">
@@ -429,7 +429,7 @@ const HomePage = () => {
               </Button>
               <Button asChild size="lg" className="bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:from-blue-600 hover:to-cyan-600 shadow-lg">
                 <Link to="/weather">
-                  Ibiza Weather
+                  Weather & Beaches
                 </Link>
               </Button>
               <Button asChild size="lg" className="bg-gradient-to-r from-orange-500 to-red-500 text-white hover:from-orange-600 hover:to-red-600 shadow-lg">
