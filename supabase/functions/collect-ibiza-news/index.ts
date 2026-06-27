@@ -152,6 +152,19 @@ const SPANISH_TEXT_PATTERN =
 
 const looksSpanish = (value: string) => SPANISH_TEXT_PATTERN.test(value);
 
+const translateTextFallback = async (value: string) => {
+  const normalized = normalizeWhitespace(value);
+  if (!normalized || !looksSpanish(normalized)) return normalized;
+
+  const response = await fetch(
+    `https://translate.googleapis.com/translate_a/single?client=gtx&sl=es&tl=en&dt=t&q=${encodeURIComponent(normalized)}`,
+  );
+  if (!response.ok) return normalized;
+
+  const data = await response.json();
+  return normalizeWhitespace(data?.[0]?.map((part: unknown[]) => part?.[0] || "").join("") || normalized);
+};
+
 const summarizeWithAi = async (candidate: ClassifiedNewsCandidate, evidenceHash: string, enabled: boolean) => {
   const fallbackHeadline = normalizeWhitespace(candidate.headline);
   const fallbackSummary = normalizeWhitespace(candidate.summary_seed || candidate.headline);
@@ -238,7 +251,7 @@ const summarizeWithAi = async (candidate: ClassifiedNewsCandidate, evidenceHash:
       const headline = normalizeWhitespace(parsed.headline || fallbackHeadline).slice(0, 180);
       const summary = normalizeWhitespace(parsed.summary || fallbackSummary).slice(0, 700);
 
-      if (attempt === 1 && looksSpanish(`${headline} ${summary}`)) continue;
+      if (looksSpanish(`${headline} ${summary}`)) continue;
 
       return {
         headline,
@@ -248,7 +261,14 @@ const summarizeWithAi = async (candidate: ClassifiedNewsCandidate, evidenceHash:
       };
     }
 
-    return { headline: fallbackHeadline, summary: fallbackSummary, model: null, hash: null };
+    const headline = await translateTextFallback(fallbackHeadline);
+    const summary = await translateTextFallback(fallbackSummary);
+    return {
+      headline,
+      summary,
+      model: "google_translate_fallback",
+      hash: await sha256(`${evidenceHash}|${headline}|${summary}`),
+    };
   } catch (error) {
     console.warn("AI summary fallback", error);
     return { headline: fallbackHeadline, summary: fallbackSummary, model: null, hash: null };
