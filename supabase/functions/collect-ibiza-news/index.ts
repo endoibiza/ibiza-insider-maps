@@ -254,7 +254,7 @@ const findSemanticDuplicate = async (supabase: SupabaseClient, candidate: Classi
 };
 
 const shouldRejectExistingPublishedStory = (reason?: string) =>
-  reason === "missing Ibiza-local relevance signal" || reason === "missing direct source URL";
+  reason === "missing Ibiza-local relevance signal" || reason === "missing direct source URL" || reason === "obituary notices are not public news";
 
 const nextStoryStatus = (
   existingStatus: string | undefined,
