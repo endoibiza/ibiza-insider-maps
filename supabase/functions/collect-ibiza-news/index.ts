@@ -90,6 +90,13 @@ const parseRequest = async (req: Request): Promise<Required<CollectRequest>> => 
 const toSourceConfig = (source: DatabaseSource): NewsSourceConfig | null => {
   if (source.source_type === "api") return null;
   const municipality = source.raw_metadata?.municipality as string | undefined;
+  const section = String(source.raw_metadata?.section || "").toLowerCase();
+  const sourceScope =
+    municipality || ["ibiza", "pitiusas", "santa-eularia", "santa_eularia", "eivissa", "sant-antoni", "sant_josep"].includes(section)
+      ? "local"
+      : section === "general"
+        ? "general"
+        : "unknown";
 
   return {
     id: source.id,
@@ -102,6 +109,7 @@ const toSourceConfig = (source: DatabaseSource): NewsSourceConfig | null => {
     publish_mode: source.publish_mode,
     default_category: (source.raw_metadata?.default_category as string | undefined) ?? null,
     default_area: municipality ? [MUNICIPAL_AREA_LABELS[municipality] || municipality] : null,
+    source_scope: sourceScope,
   };
 };
 
@@ -245,6 +253,25 @@ const findSemanticDuplicate = async (supabase: SupabaseClient, candidate: Classi
   return data as { id: string; headline: string; status: string } | null;
 };
 
+const shouldRejectExistingPublishedStory = (reason?: string) =>
+  reason === "missing Ibiza-local relevance signal" || reason === "missing direct source URL";
+
+const nextStoryStatus = (
+  existingStatus: string | undefined,
+  isDuplicate: boolean,
+  publishDecision: { publishable: boolean; reason?: string },
+  request: Required<CollectRequest>,
+) => {
+  if (existingStatus === "published") {
+    return publishDecision.publishable || !shouldRejectExistingPublishedStory(publishDecision.reason) ? "published" : "rejected";
+  }
+
+  if (isDuplicate) return "duplicate";
+  if (publishDecision.publishable && request.publish && !request.dry_run) return "published";
+  if (publishDecision.publishable) return "staged";
+  return "skipped";
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -384,15 +411,7 @@ serve(async (req) => {
             });
           }
 
-          const nextStatus = existingStory?.status === "published"
-            ? "published"
-            : isDuplicate
-              ? "duplicate"
-              : publishDecision.publishable && request.publish && !request.dry_run
-                ? "published"
-                : publishDecision.publishable
-                  ? "staged"
-                  : "skipped";
+          const nextStatus = nextStoryStatus(existingStory?.status, isDuplicate, publishDecision, request);
 
           const canUseAi = Boolean(
               publishDecision.publishable &&
