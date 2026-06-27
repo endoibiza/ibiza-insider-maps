@@ -12,6 +12,7 @@ export interface NewsSourceConfig {
   default_area?: string[] | null;
   default_language?: string | null;
   publish_mode?: NewsPublishMode | null;
+  source_scope?: "local" | "general" | "unknown" | null;
 }
 
 export interface RawNewsCandidate {
@@ -61,7 +62,7 @@ const CATEGORY_KEYWORDS: Array<[string, RegExp]> = [
   ["Transport", /\b(airport|aeropuerto|flight|ferry|bus|taxi|traffic|transport|road|carretera|port|puerto|parking)\b/i],
   ["Public Safety", /\b(emergency|112|fire|incendio|bomberos|police|policia|polic[ií]a|guardia civil|rescue|rescat|safety|seguridad|socorrista)\b/i],
   ["Crime", /\b(arrest|detenido|detenida|robbery|theft|drug|droga|crime|delito|court|tribunal|prison|violencia|agresi[oó]n)\b/i],
-  ["Government", /\b(council|consell|govern|ayuntamiento|ajuntament|plen[oa]|mayor|alcald|councillor|municipal)\b/i],
+  ["Government", /\b(council|consell|govern|gobierno|ministros|ayuntamiento|ajuntament|plen[oa]|mayor|alcald|councillor|municipal)\b/i],
   ["Infrastructure", /\b(works|obras|roadworks|water|agua|sewer|electric|power|construction|vivienda|housing)\b/i],
   ["Environment", /\b(environment|medio ambiente|sea|mar|beach|playa|posidonia|waste|residuos|climate|biodiversity)\b/i],
   ["Business", /\b(opening|opens|abierto|apertura|restaurant|restaurante|hotel|business|negocio|empresa|comercio|venue|kebab|food|gastronom)\b/i],
@@ -81,7 +82,7 @@ const AREA_KEYWORDS: Array<[string, RegExp]> = [
 ];
 
 const LOCAL_SIGNAL_PATTERN =
-  /\b(ibiza|eivissa|piti[uü]sas|formentera|santa eul[àa]ria|santa eularia|santa eulalia|sant antoni|san antonio|sant josep|san jos[eé]|sant joan|san juan|sant rafael|sant rafel|sant jordi|es canar|cala llonga|cala bou|jes[uú]s|dalt vila|playa d'en bossa|platja d'en bossa)\b/i;
+  /\b(ibiza|eivissa|piti[uü]sas|formentera|santa eul[àa]ria|santa eularia|santa eulalia|sant antoni|san antonio|portmany|west end|ses variades|sant josep|san jos[eé]|sant joan|san juan|sant rafael|sant rafel|sant jordi|sant miquel|san miguel|es canar|es can[áa]|cala llonga|cala bou|cala vedella|cala tarida|es cubells|portinatx|jes[uú]s|puig d'en valls|dalt vila|playa d'en bossa|platja d'en bossa)\b/i;
 
 export function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
@@ -369,6 +370,11 @@ function hasLocalIbizaSignal(candidate: RawNewsCandidate): boolean {
   return LOCAL_SIGNAL_PATTERN.test(`${candidate.headline} ${candidate.source_description ?? ""} ${path}`);
 }
 
+function hasExplicitLocalSourceScope(source: NewsSourceConfig): boolean {
+  if (source.source_scope === "local") return true;
+  return Boolean(source.default_area?.some((area) => area && area !== "Island-Wide"));
+}
+
 function classifySignificance(candidate: RawNewsCandidate, category: string): string {
   const haystack = `${candidate.headline} ${candidate.source_description ?? ""}`;
   if (/\b(breaking|urgent|ultima hora|emergency|evacuat|fatal|death|storm alert)\b/i.test(haystack)) return "Breaking";
@@ -391,6 +397,7 @@ export function classifyCandidate(candidate: RawNewsCandidate, source: NewsSourc
   const canonicalUrl = candidate.canonical_url || "";
   const normalizedHeadline = normalizeWhitespace(candidate.headline).toLowerCase();
   const localSignal = hasLocalIbizaSignal(candidate);
+  const localSourceScope = hasExplicitLocalSourceScope(source);
 
   return {
     ...candidate,
@@ -400,7 +407,7 @@ export function classifyCandidate(candidate: RawNewsCandidate, source: NewsSourc
     significance,
     digest_section: digestSection(category, area, candidate.headline),
     santa_eularia: area.includes("Santa Eulària") || area.includes("Es Canar") || area.includes("Cala Llonga"),
-    ibiza_maps_relevant: localSignal || category !== "Other" || area.some((value) => value !== "Island-Wide"),
+    ibiza_maps_relevant: localSignal || localSourceScope,
     dedupe_key: stableHash(`${normalizedHeadline}|${candidate.published_at?.slice(0, 10) || ""}`),
     evidence_hash_seed: `${source.source_key}|${canonicalUrl}|${candidate.headline}|${candidate.source_description || ""}|${candidate.published_at || ""}`,
   };
@@ -432,9 +439,16 @@ export function isFreshForTarget(candidate: RawNewsCandidate, targetDate: string
   return publishedDate >= addDays(targetDate, -1) && publishedDate <= addDays(targetDate, 1);
 }
 
+function isObituaryCandidate(candidate: RawNewsCandidate): boolean {
+  const path = candidate.canonical_url ? new URL(candidate.canonical_url).pathname : "";
+  const haystack = `${path} ${candidate.headline} ${candidate.source_description ?? ""}`;
+  return /\b(esquelas?|obituar(?:y|io)|necrol[oó]gica|nota\s+(?:f[uú]nebre|mortuoria))\b/i.test(haystack);
+}
+
 export function shouldPublishCandidate(candidate: ClassifiedNewsCandidate, targetDate: string): { publishable: boolean; reason?: string } {
   if (candidate.publish_mode !== "auto") return { publishable: false, reason: `source mode is ${candidate.publish_mode}` };
   if (!isDirectSourceUrl(candidate.canonical_url)) return { publishable: false, reason: "missing direct source URL" };
+  if (isObituaryCandidate(candidate)) return { publishable: false, reason: "obituary notices are not public news" };
   if (!candidate.ibiza_maps_relevant) return { publishable: false, reason: "missing Ibiza-local relevance signal" };
   if (!isFreshForTarget(candidate, targetDate)) return { publishable: false, reason: "not fresh for target date" };
   if (!candidate.headline || candidate.headline.length < 8) return { publishable: false, reason: "headline missing or too short" };

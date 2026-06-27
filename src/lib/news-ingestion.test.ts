@@ -121,6 +121,109 @@ describe("Ibiza news ingestion helpers", () => {
     });
   });
 
+  it("does not publish national government stories from general feeds without local signal", () => {
+    const raw: RawNewsCandidate = {
+      source_key: "diario-general-rss",
+      source_name: "Diario de Ibiza RSS",
+      source_type: "rss",
+      publish_mode: "auto",
+      source_url: "https://www.diariodeibiza.es/rss/",
+      canonical_url: "https://www.diariodeibiza.es/nacional/2026/06/27/gobierno-prorrogara-ayudas-anticrisis-combustibles-131870832.html",
+      headline: "Government to extend anti-crisis aid for fuels and electrification, approve macroeconomic framework",
+      source_description: "El Consejo de Ministros prevé prorrogar este lunes el decreto anticrisis para hacer frente a consecuencias internacionales.",
+      published_at: "2026-06-27T10:00:00.000Z",
+      language: "es",
+      raw_metadata: {},
+    };
+
+    const classified = classifyCandidate(raw, rssSource);
+
+    expect(classified.category).toBe("Government");
+    expect(classified.ibiza_maps_relevant).toBe(false);
+    expect(shouldPublishCandidate(classified, "2026-06-27")).toEqual({
+      publishable: false,
+      reason: "missing Ibiza-local relevance signal",
+    });
+  });
+
+  it("does not publish broad society safety stories from general feeds without local signal", () => {
+    const raw: RawNewsCandidate = {
+      source_key: "diario-general-rss",
+      source_name: "Diario de Ibiza RSS",
+      source_type: "rss",
+      publish_mode: "auto",
+      source_url: "https://www.diariodeibiza.es/rss/",
+      canonical_url: "https://www.diariodeibiza.es/sociedad/2026/06/27/zambullidas-causan-60-lesiones-medulares-131870945.html",
+      headline: "Diving causes up to 60 spinal cord injuries annually in Spain",
+      source_description: "Accidentes en el agua causan lesiones medulares traumáticas cada verano en España.",
+      published_at: "2026-06-27T09:00:00.000Z",
+      language: "es",
+      raw_metadata: {},
+    };
+
+    const classified = classifyCandidate(raw, rssSource);
+
+    expect(classified.category).not.toBe("Other");
+    expect(classified.ibiza_maps_relevant).toBe(false);
+    expect(shouldPublishCandidate(classified, "2026-06-27")).toEqual({
+      publishable: false,
+      reason: "missing Ibiza-local relevance signal",
+    });
+  });
+
+  it("does not publish obituary items from general feeds without local signal", () => {
+    const raw: RawNewsCandidate = {
+      source_key: "diario-general-rss",
+      source_name: "Diario de Ibiza RSS",
+      source_type: "rss",
+      publish_mode: "auto",
+      source_url: "https://www.diariodeibiza.es/rss/",
+      canonical_url: "https://www.diariodeibiza.es/esquelas/2026/06/27/nota-maria-jose-buforn-jimenez-131861557.html",
+      headline: "Nota María José Buforn Jiménez",
+      source_description: null,
+      published_at: "2026-06-27T07:00:00.000Z",
+      language: "es",
+      raw_metadata: {},
+    };
+
+    const classified = classifyCandidate(raw, rssSource);
+
+    expect(classified.ibiza_maps_relevant).toBe(false);
+    expect(shouldPublishCandidate(classified, "2026-06-27")).toEqual({
+      publishable: false,
+      reason: "obituary notices are not public news",
+    });
+  });
+
+  it("allows explicitly local source scopes even when the headline is generic", () => {
+    const raw: RawNewsCandidate = {
+      source_key: "periodico-ibiza-atom",
+      source_name: "Periódico de Ibiza y Formentera — Ibiza",
+      source_type: "atom",
+      publish_mode: "auto",
+      source_url: "https://www.periodicodeibiza.es/pitiusas/ibiza.rss",
+      canonical_url: "https://www.periodicodeibiza.es/pitiusas/ibiza/2026/06/27/2659999/nueva-formacion-profesional.html",
+      headline: "Nueva jornada de formación profesional",
+      source_description: "El programa se celebra esta semana con apoyo municipal.",
+      published_at: "2026-06-27T08:00:00.000Z",
+      language: "es",
+      raw_metadata: {},
+    };
+
+    const classified = classifyCandidate(raw, {
+      source_key: "periodico-ibiza-atom",
+      source_name: "Periódico de Ibiza y Formentera — Ibiza",
+      source_type: "atom",
+      source_url: "https://www.periodicodeibiza.es/pitiusas/ibiza.rss",
+      default_language: "es",
+      publish_mode: "auto",
+      source_scope: "local",
+    });
+
+    expect(classified.ibiza_maps_relevant).toBe(true);
+    expect(shouldPublishCandidate(classified, "2026-06-27")).toEqual({ publishable: true });
+  });
+
   it("does not infer Formentera area from source labels", () => {
     const raw: RawNewsCandidate = {
       source_key: "periodico-ibiza-atom",
