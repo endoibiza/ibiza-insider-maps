@@ -152,9 +152,14 @@ const SPANISH_TEXT_PATTERN =
 
 const looksSpanish = (value: string) => SPANISH_TEXT_PATTERN.test(value);
 
+const translationCache = new Map<string, string>();
+
 const translateTextFallback = async (value: string, force = false) => {
   const normalized = normalizeWhitespace(value);
   if (!normalized || (!force && !looksSpanish(normalized))) return normalized;
+  const cacheKey = `${force ? "force" : "detect"}:${normalized}`;
+  const cached = translationCache.get(cacheKey);
+  if (cached) return cached;
 
   const response = await fetch(
     `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q=${encodeURIComponent(normalized)}`,
@@ -162,7 +167,34 @@ const translateTextFallback = async (value: string, force = false) => {
   if (!response.ok) return normalized;
 
   const data = await response.json();
-  return normalizeWhitespace(data?.[0]?.map((part: unknown[]) => part?.[0] || "").join("") || normalized);
+  const translated = normalizeWhitespace(data?.[0]?.map((part: unknown[]) => part?.[0] || "").join("") || normalized);
+  translationCache.set(cacheKey, translated);
+  return translated;
+};
+
+const translateDisplayPairFallback = async (headline: string, summary: string, force = false) => {
+  const normalizedHeadline = normalizeWhitespace(headline);
+  const normalizedSummary = normalizeWhitespace(summary);
+  if (!force && !looksSpanish(`${normalizedHeadline} ${normalizedSummary}`)) {
+    return { headline: normalizedHeadline, summary: normalizedSummary };
+  }
+
+  const marker = " IBIZA_MAPS_SUMMARY_SEPARATOR ";
+  const combined = `${normalizedHeadline}${marker}${normalizedSummary}`;
+  const translated = await translateTextFallback(combined, true);
+  const [translatedHeadline, ...translatedSummaryParts] = translated.split(marker.trim());
+
+  if (translatedSummaryParts.length === 0) {
+    return {
+      headline: await translateTextFallback(normalizedHeadline, force),
+      summary: await translateTextFallback(normalizedSummary, force),
+    };
+  }
+
+  return {
+    headline: normalizeWhitespace(translatedHeadline || normalizedHeadline),
+    summary: normalizeWhitespace(translatedSummaryParts.join(marker.trim()) || normalizedSummary),
+  };
 };
 
 type DisplayTextResult = {
@@ -177,8 +209,9 @@ const buildTranslationFallback = async (candidate: ClassifiedNewsCandidate, evid
   const fallbackHeadline = normalizeWhitespace(candidate.headline);
   const fallbackSummary = normalizeWhitespace(candidate.summary_seed || candidate.headline);
   const forceTranslation = candidate.language !== "en";
-  const headline = await translateTextFallback(fallbackHeadline, forceTranslation);
-  const summary = await translateTextFallback(fallbackSummary, forceTranslation);
+  const translated = await translateDisplayPairFallback(fallbackHeadline, fallbackSummary, forceTranslation);
+  const headline = translated.headline;
+  const summary = translated.summary;
   const combined = `${headline} ${summary}`;
 
   if (looksSpanish(combined)) {
