@@ -33,10 +33,12 @@ export interface ClassifiedNewsCandidate extends RawNewsCandidate {
   summary_seed: string;
   category: string;
   area: string[];
+  primary_area: string;
   significance: string;
   digest_section: "island_wide" | "santa_eularia" | "new_businesses" | "weekly_crime";
   santa_eularia: boolean;
   ibiza_maps_relevant: boolean;
+  curation_score: number;
   dedupe_key: string;
   evidence_hash_seed: string;
 }
@@ -382,11 +384,49 @@ function classifySignificance(candidate: RawNewsCandidate, category: string): st
   return "Minor";
 }
 
+function primaryArea(area: string[]): string {
+  if (area.includes("Formentera")) return "Formentera";
+  return area[0] || "Island-Wide";
+}
+
 function digestSection(category: string, area: string[], headline: string): ClassifiedNewsCandidate["digest_section"] {
   if (/\b(opening|opens|apertura|new business|restaurant|hotel)\b/i.test(headline) || category === "Business") return "new_businesses";
   if (category === "Crime") return "weekly_crime";
   if (area.includes("Santa Eulària")) return "santa_eularia";
   return "island_wide";
+}
+
+export function calculateCurationScore(candidate: RawNewsCandidate, category: string, area: string[], significance: string): number {
+  const haystack = `${candidate.headline} ${candidate.source_description ?? ""} ${candidate.canonical_url ?? ""}`;
+  let score = 40;
+
+  const categoryBoosts: Record<string, number> = {
+    "Public Safety": 30,
+    Crime: 24,
+    Transport: 26,
+    "Weather Alert": 26,
+    Infrastructure: 22,
+    Government: 20,
+    Business: 14,
+    Tourism: 12,
+    Environment: 12,
+    Health: 12,
+    Community: 8,
+    Culture: 6,
+    Other: 0,
+  };
+
+  score += categoryBoosts[category] ?? 0;
+  if (significance === "Breaking") score += 35;
+  if (significance === "Notable") score += 12;
+  if (area.includes("Island-Wide")) score += 8;
+  if (area.includes("Formentera")) score += 3;
+  if (/\b(housing|vivienda|transport|airport|aeropuerto|bus|taxi|ferry|port|puerto|fire|incendio|police|polic[ií]a|guardia civil|weather|aemet|alerta|opening|apertura|water|agua|waste|residuos)\b/i.test(haystack)) score += 12;
+  if (/\b(opini[oó]n|opinion|editorial|hor[oó]scopo|recipe|receta|weather forecast|previsi[oó]n.*tiempo|tiempo.*previsi[oó]n)\b/i.test(haystack)) score -= 28;
+  if (/\b(esquela|obituary|necrol[oó]gica|mourns the death|llora la muerte)\b/i.test(haystack)) score -= 45;
+  if (!candidate.source_description || candidate.source_description.length < 80) score -= 10;
+
+  return Math.max(0, Math.min(100, score));
 }
 
 export function classifyCandidate(candidate: RawNewsCandidate, source: NewsSourceConfig): ClassifiedNewsCandidate {
@@ -404,10 +444,12 @@ export function classifyCandidate(candidate: RawNewsCandidate, source: NewsSourc
     summary_seed: summarySeed,
     category,
     area,
+    primary_area: primaryArea(area),
     significance,
     digest_section: digestSection(category, area, candidate.headline),
     santa_eularia: area.includes("Santa Eulària") || area.includes("Es Canar") || area.includes("Cala Llonga"),
     ibiza_maps_relevant: localSignal || localSourceScope,
+    curation_score: calculateCurationScore(candidate, category, area, significance),
     dedupe_key: stableHash(`${normalizedHeadline}|${candidate.published_at?.slice(0, 10) || ""}`),
     evidence_hash_seed: `${source.source_key}|${canonicalUrl}|${candidate.headline}|${candidate.source_description || ""}|${candidate.published_at || ""}`,
   };
@@ -455,23 +497,32 @@ export function shouldPublishCandidate(candidate: ClassifiedNewsCandidate, targe
   return { publishable: true };
 }
 
-export function buildDigestSections(stories: Array<{ id: string; headline: string; summary: string; digest_section: string; source_url: string }>, targetDate: string) {
+export function buildDigestSections(
+  stories: Array<{ id: string; headline: string; summary: string; digest_section: string; source_url: string; curation_score?: number | null }>,
+  targetDate: string,
+) {
+  const rankedStories = [...stories].sort((left, right) => (right.curation_score ?? 0) - (left.curation_score ?? 0));
   const sections = {
-    island_wide: stories.filter((story) => story.digest_section === "island_wide").map((story) => story.id),
-    santa_eularia: stories.filter((story) => story.digest_section === "santa_eularia").map((story) => story.id),
-    new_businesses: stories.filter((story) => story.digest_section === "new_businesses").map((story) => story.id),
-    weekly_crime: dayNameInMadrid(targetDate) === "Sunday" ? stories.filter((story) => story.digest_section === "weekly_crime").map((story) => story.id) : [],
+    front_page: rankedStories.slice(0, 12).map((story) => story.id),
+    island_wide: rankedStories.filter((story) => story.digest_section === "island_wide").map((story) => story.id),
+    santa_eularia: rankedStories.filter((story) => story.digest_section === "santa_eularia").map((story) => story.id),
+    new_businesses: rankedStories.filter((story) => story.digest_section === "new_businesses").map((story) => story.id),
+    weekly_crime: dayNameInMadrid(targetDate) === "Sunday" ? rankedStories.filter((story) => story.digest_section === "weekly_crime").map((story) => story.id) : [],
   };
 
   return sections;
 }
 
-export function buildDigestSummary(stories: Array<{ headline: string; summary: string; digest_section: string }>, targetDate: string, sourcesChecked: string[]): string {
+export function buildDigestSummary(stories: Array<{ headline: string; summary: string; digest_section: string; curation_score?: number | null }>, targetDate: string, sourcesChecked: string[]): string {
   const dayName = dayNameInMadrid(targetDate);
   if (stories.length === 0) {
     return `Date verified: ${targetDate} = ${dayName}\n\nNone found today from verified direct-source stories. Sources checked: ${sourcesChecked.join(", ")}`;
   }
 
-  const topStories = stories.slice(0, 8).map((story) => `- ${story.headline}: ${story.summary}`).join("\n");
+  const topStories = [...stories]
+    .sort((left, right) => (right.curation_score ?? 0) - (left.curation_score ?? 0))
+    .slice(0, 8)
+    .map((story) => `- ${story.headline}: ${story.summary}`)
+    .join("\n");
   return `Date verified: ${targetDate} = ${dayName}\n\n${topStories}`;
 }

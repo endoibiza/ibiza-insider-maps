@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, ExternalLink, List, Loader2, MapPin, Newspaper, RefreshCw, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ExternalLink, List, Loader2, Map, MapPin, Newspaper, RefreshCw, ShieldCheck, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { NewsSkeleton } from "@/components/ui/skeleton-loaders";
@@ -15,6 +15,7 @@ import {
   formatStoryDate,
   getSourceHost,
   isDirectNewsUrl,
+  NEWS_AREA_FILTERS,
   NEWS_CATEGORIES,
   NewsPayload,
   NewsView,
@@ -30,7 +31,7 @@ interface NewsWidgetProps {
 }
 
 const newsSelect =
-  "id,notion_page_id,headline,summary,category,area,source_url,date,created_at,updated_at,significance,ibiza_maps_relevant,santa_eularia,source_label,source_domain,digest_section,published_at,legacy_source";
+  "id,notion_page_id,headline,summary,category,area,source_url,date,created_at,updated_at,significance,ibiza_maps_relevant,santa_eularia,source_label,source_domain,digest_section,published_at,legacy_source,display_language,translation_status,primary_area,curation_score";
 
 type QueryError = { message: string };
 type QueryResponse<T> = Promise<{ data: T[] | null; error: QueryError | null }>;
@@ -56,6 +57,7 @@ const fetchNewsPayload = async (): Promise<NewsPayload> => {
     .from<PublicNewsStory>("ibiza_news_public")
     .select(newsSelect)
     .order("date", { ascending: false })
+    .order("curation_score", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(80);
 
@@ -85,6 +87,7 @@ const fetchNewsPayload = async (): Promise<NewsPayload> => {
 
 const StoryCard = ({ story, featured = false }: { story: PublicNewsStory; featured?: boolean }) => {
   const areas = splitAreaLabels(story.area);
+  const displayAreas = story.primary_area && !areas.includes(story.primary_area) ? [story.primary_area, ...areas] : areas;
   const source = getSourceHost(story);
 
   return (
@@ -98,7 +101,7 @@ const StoryCard = ({ story, featured = false }: { story: PublicNewsStory; featur
         <Badge variant="outline" className={cn("uppercase tracking-normal", categoryStyle(story.category))}>
           {story.category || "Other"}
         </Badge>
-        {areas.slice(0, 2).map((area) => (
+        {displayAreas.slice(0, 2).map((area) => (
           <span key={area} className="inline-flex items-center gap-1">
             <MapPin className="h-3 w-3" />
             {area}
@@ -168,8 +171,9 @@ const NewsWidget = ({ autoLoad: _autoLoad = true }: NewsWidgetProps) => {
   const areas = useMemo(() => uniqueAreas(stories), [stories]);
   const visibleStories = useMemo(() => filterStories(stories, view, category, area), [stories, view, category, area]);
   const topStory = visibleStories[0];
-  const remainingStories = view === "front" ? visibleStories.slice(1, 9) : visibleStories;
+  const remainingStories = view === "front" ? visibleStories.slice(1, 12) : visibleStories;
   const stale = digestIsStale(data?.digest ?? null);
+  const lastUpdated = data?.digest?.updated_at || data?.digest?.generated_at || stories[0]?.updated_at || null;
 
   useEffect(() => {
     if (!error) return;
@@ -204,13 +208,33 @@ const NewsWidget = ({ autoLoad: _autoLoad = true }: NewsWidgetProps) => {
 
   return (
     <section className="mx-auto w-full max-w-6xl px-4 py-10 md:py-14">
-      <div className="mb-7 flex flex-col items-center gap-5">
-        <div className="text-center text-sm text-muted-foreground">{formatLongMadridDate(data?.digest?.digest_date || todayMadrid())}</div>
+      <div className="mb-7 flex flex-col items-center gap-4">
+        <div className="text-center">
+          <p className="text-sm text-muted-foreground">{formatLongMadridDate(data?.digest?.digest_date || todayMadrid())}</p>
+          <p className="mt-2 inline-flex items-center gap-2 text-xs font-medium text-slate-600">
+            <ShieldCheck className="h-4 w-4 text-emerald-600" />
+            English summaries from verified local sources. Original articles open at source.
+          </p>
+          {lastUpdated && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Last updated{" "}
+              {new Intl.DateTimeFormat("en-GB", {
+                timeZone: "Europe/Madrid",
+                day: "numeric",
+                month: "short",
+                hour: "2-digit",
+                minute: "2-digit",
+              }).format(new Date(lastUpdated))}
+            </p>
+          )}
+        </div>
 
         <div className="flex flex-wrap justify-center gap-2">
           <ViewButton active={view === "front"} icon={Newspaper} label="Front Page" onClick={() => setView("front")} />
           <ViewButton active={view === "all"} icon={List} label="All Stories" onClick={() => setView("all")} />
+          <ViewButton active={view === "area"} icon={Map} label="By Area" onClick={() => setView("area")} />
           <ViewButton active={view === "santa"} icon={MapPin} label="Santa Eulària" onClick={() => setView("santa")} />
+          <ViewButton active={view === "formentera"} icon={MapPin} label="Formentera" onClick={() => setView("formentera")} />
           <Button type="button" size="sm" variant="ghost" onClick={handleRefresh} disabled={isFetching} className="h-9 rounded-full">
             {isFetching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
             Refresh
@@ -226,16 +250,19 @@ const NewsWidget = ({ autoLoad: _autoLoad = true }: NewsWidgetProps) => {
       )}
 
       <div className="mb-5 flex gap-2 overflow-x-auto pb-2 text-sm">
-        <span className="flex-none py-2 text-xs font-medium text-muted-foreground">By area:</span>
+        <span className="flex-none py-2 text-xs font-medium text-muted-foreground">Area:</span>
         <Button size="sm" variant={area === null ? "default" : "outline"} onClick={() => setArea(null)} className="h-8 flex-none rounded-full">
           All
         </Button>
-        {areas.map((areaLabel) => (
+        {NEWS_AREA_FILTERS.filter((areaLabel) => areas.includes(areaLabel)).map((areaLabel) => (
           <Button
             key={areaLabel}
             size="sm"
             variant={area === areaLabel ? "default" : "outline"}
-            onClick={() => setArea(areaLabel)}
+            onClick={() => {
+              setArea(areaLabel);
+              setView("area");
+            }}
             className="h-8 flex-none rounded-full"
           >
             {areaLabel}

@@ -1,4 +1,14 @@
-export type NewsView = "front" | "all" | "santa";
+export type NewsView = "front" | "all" | "area" | "santa" | "formentera";
+
+export const NEWS_AREA_FILTERS = [
+  "Island-Wide",
+  "Ibiza Town",
+  "Santa Eulària",
+  "San Antonio",
+  "San José",
+  "Sant Joan",
+  "Formentera",
+] as const;
 
 export interface PublicNewsStory {
   id: string;
@@ -19,6 +29,10 @@ export interface PublicNewsStory {
   digest_section?: string | null;
   published_at?: string | null;
   legacy_source?: boolean | null;
+  display_language?: string | null;
+  translation_status?: string | null;
+  primary_area?: string | null;
+  curation_score?: number | null;
 }
 
 export interface PublicNewsDigest {
@@ -136,16 +150,34 @@ export const isDirectNewsUrl = (value?: string | null) => {
 export const uniqueAreas = (stories: PublicNewsStory[]) => {
   const areas = new Set<string>();
   stories.forEach((story) => splitAreaLabels(story.area).forEach((area) => areas.add(area)));
-  return Array.from(areas).sort((left, right) => left.localeCompare(right));
+  const ordered = NEWS_AREA_FILTERS.filter((area) => areas.has(area));
+  const remaining = Array.from(areas)
+    .filter((area) => !NEWS_AREA_FILTERS.includes(area as (typeof NEWS_AREA_FILTERS)[number]))
+    .sort((left, right) => left.localeCompare(right));
+  return [...ordered, ...remaining];
+};
+
+const storyRank = (story: PublicNewsStory) => {
+  const score = story.curation_score ?? 0;
+  const date = new Date(story.published_at || story.date || story.created_at).getTime() || 0;
+  return score * 1_000_000_000_000 + date;
 };
 
 export const filterStories = (stories: PublicNewsStory[], view: NewsView, category: string, area: string | null) => {
   return stories.filter((story) => {
+    const areas = splitAreaLabels(story.area);
     if (view === "santa" && !story.santa_eularia && !splitAreaLabels(story.area).includes("Santa Eulària")) return false;
+    if (view === "formentera" && !areas.includes("Formentera") && story.primary_area !== "Formentera") return false;
+    if (view === "area" && area && !areas.includes(area) && story.primary_area !== area) return false;
     if (view === "front" && story.digest_section === "weekly_crime") return false;
     if (category !== "All" && story.category !== category) return false;
-    if (area && !splitAreaLabels(story.area).includes(area)) return false;
+    if (view !== "area" && area && !areas.includes(area) && story.primary_area !== area) return false;
     return isDirectNewsUrl(story.source_url);
+  }).sort((left, right) => {
+    if (view === "front") return storyRank(right) - storyRank(left);
+    const rightDate = new Date(right.published_at || right.date || right.created_at).getTime() || 0;
+    const leftDate = new Date(left.published_at || left.date || left.created_at).getTime() || 0;
+    return rightDate - leftDate || storyRank(right) - storyRank(left);
   });
 };
 
