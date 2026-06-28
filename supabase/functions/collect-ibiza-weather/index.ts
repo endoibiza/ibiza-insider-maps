@@ -246,10 +246,33 @@ const fetchText = async (url: string, accept = "application/json,*/*;q=0.8") => 
       text: decoderForContentType(contentType).decode(bytes),
       contentType,
       bytes,
+      retryAfter: response.headers.get("retry-after"),
     };
   } finally {
     clearTimeout(timeout);
   }
+};
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const parseRetryAfterMs = (value: string | null | undefined) => {
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const dateMs = Date.parse(value);
+  return Number.isFinite(dateMs) ? Math.max(0, dateMs - Date.now()) : null;
+};
+
+const fetchAemetText = async (url: string, accept = "application/json,*/*;q=0.8") => {
+  let latest = await fetchText(url, accept);
+
+  for (let attempt = 1; attempt <= 3 && (latest.status === 429 || latest.status >= 500); attempt += 1) {
+    const retryAfterMs = parseRetryAfterMs(latest.retryAfter);
+    await sleep(retryAfterMs ?? attempt * 2500);
+    latest = await fetchText(url, accept);
+  }
+
+  return latest;
 };
 
 const insertSnapshot = async (
@@ -819,7 +842,7 @@ const fetchAemetOpenData = async (source: WeatherSourceRow) => {
 
   const metadataUrl = new URL(source.source_url);
   metadataUrl.searchParams.set("api_key", apiKey);
-  const metadata = await fetchText(metadataUrl.toString(), "application/json,*/*;q=0.8");
+  const metadata = await fetchAemetText(metadataUrl.toString(), "application/json,*/*;q=0.8");
   const metadataPayload = tryParseJson(metadata.text);
   const dataUrl = metadataPayload?.datos as string | undefined;
 
@@ -845,7 +868,8 @@ const fetchAemetOpenData = async (source: WeatherSourceRow) => {
     };
   }
 
-  const dataResponse = await fetchText(dataUrl, "application/json,application/xml,text/xml,text/plain,*/*;q=0.8");
+  await sleep(1200);
+  const dataResponse = await fetchAemetText(dataUrl, "application/json,application/xml,text/xml,text/plain,*/*;q=0.8");
   const parsedData = tryParseJson(dataResponse.text);
   const capFiles = source.source_key === "aemet-alerts-balears" ? extractTarTextFiles(dataResponse.bytes) : [];
 
@@ -1341,8 +1365,16 @@ serve(async (req) => {
     const usableForecast = Boolean(merged.current || merged.daily.length > 0);
     const staleFlags: Array<Record<string, unknown>> = [];
 
-    if (!sourceStatuses.some((status) => status.source_key.startsWith("aemet-") && status.status === "success")) {
-      staleFlags.push({ source: "AEMET OpenData", status: "pending", message: "Official AEMET data requires AEMET_API_KEY" });
+    const aemetStatuses = sourceStatuses.filter((status) => status.source_key.startsWith("aemet-"));
+    if (aemetStatuses.length > 0 && !aemetStatuses.some((status) => status.status === "success")) {
+      const aemetMissingKey = aemetStatuses.some((status) => status.status === "blocked");
+      staleFlags.push({
+        source: "AEMET OpenData",
+        status: aemetMissingKey ? "pending" : "degraded",
+        message: aemetMissingKey
+          ? "Official AEMET data requires AEMET_API_KEY"
+          : "Official AEMET data is temporarily unavailable; Ibiza Maps is using fallback weather sources.",
+      });
     }
     if (!usableForecast) {
       staleFlags.push({ source: "forecast", status: "missing", message: "No usable forecast data was collected" });
