@@ -24,7 +24,7 @@ const WeatherPage = () => {
     <>
       <SEOHead 
         title="Ibiza Weather - Source-Backed Forecasts, Sea Conditions & Alerts"
-        description="Daily Ibiza weather, wind, sea state, official AEMET alerts when available, sunrise and sunset, and beach-condition guidance with source timestamps."
+        description="Cloud-refreshed Ibiza weather, wind, sea state, official AEMET alerts when available, sunrise and sunset, and beach-condition guidance with source timestamps."
         keywords="Ibiza weather, Ibiza forecast, AEMET Ibiza, beach conditions, wind forecast, wave report, Ibiza sea conditions"
         canonicalPath="/weather"
         structuredData={structuredData}
@@ -46,7 +46,7 @@ const WeatherPage = () => {
       </div>
 
       {/* Hero Section with Weather Theme */}
-      <section className="relative py-16 overflow-hidden">
+      <section className="relative overflow-hidden py-12 md:py-14">
         <div 
           className="absolute inset-0 bg-cover bg-center opacity-20"
           style={{ backgroundImage: `url(${esVedraHero})` }}
@@ -62,12 +62,12 @@ const WeatherPage = () => {
           </div>
           
           <h1 className="text-4xl md:text-5xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-            Ibiza Weather, Sea & Beach Conditions
+            Ibiza Weather For Today
           </h1>
           
           <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
-            Stored daily reports from official and compliant free sources, with timestamps, source health, sea state, wind,
-            sunrise and sunset, and coast-by-coast beach guidance.
+            Source-backed weather, sea state, wind, UV, official alerts when available, and coast-by-coast beach guidance
+            with visible timestamps.
           </p>
 
           {/* Weather Info Cards */}

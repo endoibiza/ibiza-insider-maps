@@ -1,13 +1,21 @@
 import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  Activity,
   AlertTriangle,
+  Bike,
+  CalendarDays,
+  CheckCircle2,
   CloudSun,
   Clock,
+  Compass,
   Droplets,
   ExternalLink,
   Loader2,
+  Mountain,
   RefreshCw,
+  Sailboat,
+  ShieldAlert,
   ShieldCheck,
   Sunrise,
   Sunset,
@@ -39,6 +47,7 @@ import {
   sourceStatusClasses,
   statusLabel,
   WeatherPayload,
+  WeatherSourceStatus,
 } from "@/lib/weather";
 
 interface WeatherWidgetProps {
@@ -54,6 +63,13 @@ type QueryBuilder<T> = {
 };
 type PublicReadClient = {
   from: <T>(table: string) => QueryBuilder<T>;
+};
+
+type ActivityCondition = {
+  label: string;
+  icon: typeof Waves;
+  status: "great" | "good" | "caution";
+  detail: string;
 };
 
 const asArray = <T,>(value: T[] | null | undefined): T[] => (Array.isArray(value) ? value : []);
@@ -103,6 +119,76 @@ const fetchWeatherPayload = async (): Promise<WeatherPayload> => {
   };
 };
 
+const numeric = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : null);
+
+const activityStatusClasses = (status: ActivityCondition["status"]) => {
+  if (status === "great") return "border-emerald-200 bg-emerald-50 text-emerald-900";
+  if (status === "good") return "border-sky-200 bg-sky-50 text-sky-900";
+  return "border-amber-200 bg-amber-50 text-amber-900";
+};
+
+const hasAemetPending = (statuses: WeatherSourceStatus[]) =>
+  statuses.some((status) => status.source_key.startsWith("aemet-") && status.status === "blocked");
+
+const officialSourceUpdated = (statuses: WeatherSourceStatus[]) =>
+  statuses.some((status) => status.source_key.startsWith("aemet-") && status.status === "success");
+
+const latestStatusTime = (statuses: WeatherSourceStatus[]) => {
+  const times = statuses.map((status) => new Date(status.fetched_at).getTime()).filter(Number.isFinite);
+  if (!times.length) return "";
+  return new Date(Math.max(...times)).toISOString();
+};
+
+const buildActivityConditions = (report: PublicWeatherReport | null, alerts: Array<PublicWeatherAlert | PublicWeatherReport["alerts_summary"][number]>): ActivityCondition[] => {
+  const current = report?.current_conditions ?? {};
+  const marine = report?.marine_summary ?? {};
+  const today = report?.daily_forecast?.[0] ?? {};
+  const beachStatuses = report?.beach_conditions?.map((condition) => condition.status) ?? [];
+  const officialAlert = alerts.some((alert) => alert.official);
+  const rainChance = numeric(today.precipitation_probability_pct) ?? 0;
+  const gust = numeric(current.wind_gust_kmh) ?? numeric(current.wind_speed_kmh) ?? 0;
+  const waveHeight = numeric(marine.wave_height_m) ?? 0;
+  const uvIndex = numeric(today.uv_index) ?? 0;
+  const bestBeach = beachStatuses.includes("good");
+
+  return [
+    {
+      label: "Beach",
+      icon: Waves,
+      status: officialAlert || beachStatuses.includes("rough") ? "caution" : bestBeach ? "great" : "good",
+      detail: officialAlert
+        ? "Official alert active"
+        : waveHeight >= 1.1
+          ? "Choose sheltered coves"
+          : "Calm sea window likely",
+    },
+    {
+      label: "Swimming",
+      icon: Droplets,
+      status: officialAlert || waveHeight >= 1.4 ? "caution" : "great",
+      detail: waveHeight >= 1.4 ? "Exposed water choppy" : `Sea ${formatNumber(marine.sea_surface_temperature_c, " C", 0)}`,
+    },
+    {
+      label: "Sailing",
+      icon: Sailboat,
+      status: officialAlert || gust >= 40 ? "caution" : gust >= 25 ? "good" : "great",
+      detail: gust >= 40 ? "Watch gusts" : `Gusts ${formatNumber(current.wind_gust_kmh, " km/h", 0)}`,
+    },
+    {
+      label: "Hiking",
+      icon: Mountain,
+      status: rainChance >= 60 || uvIndex >= 8 ? "caution" : "good",
+      detail: rainChance >= 60 ? "Rain window likely" : uvIndex >= 8 ? "High UV" : "Good walking window",
+    },
+    {
+      label: "Cycling",
+      icon: Bike,
+      status: gust >= 35 || rainChance >= 60 ? "caution" : "good",
+      detail: gust >= 35 ? "Wind exposed roads" : rainChance >= 60 ? "Rain risk" : "Decent riding conditions",
+    },
+  ];
+};
+
 const Metric = ({
   icon: Icon,
   label,
@@ -116,7 +202,7 @@ const Metric = ({
 }) => (
   <div className="border bg-white p-4 shadow-sm">
     <div className="mb-3 flex items-center justify-between gap-3">
-      <span className="text-xs font-medium uppercase tracking-normal text-muted-foreground">{label}</span>
+      <span className="text-xs font-semibold uppercase tracking-normal text-muted-foreground">{label}</span>
       <Icon className="h-5 w-5 text-primary" />
     </div>
     <div className="text-2xl font-semibold text-foreground">{value}</div>
@@ -138,9 +224,18 @@ const WeatherWidget = ({ autoLoad = true }: WeatherWidgetProps) => {
   const marine = report?.marine_summary ?? {};
   const daily = report?.daily_forecast ?? [];
   const hourly = report?.hourly_forecast?.slice(0, 12) ?? [];
-  const alerts = data?.alerts?.length ? data.alerts : report?.alerts_summary ?? [];
+  const alerts = useMemo(
+    () => (data?.alerts?.length ? data.alerts : report?.alerts_summary ?? []),
+    [data?.alerts, report?.alerts_summary],
+  );
   const sourceHealth = useMemo(() => sourceHealthSummary(report?.source_status ?? []), [report?.source_status]);
   const stale = reportIsStale(report);
+  const aemetPending = hasAemetPending(report?.source_status ?? []);
+  const aemetUpdated = officialSourceUpdated(report?.source_status ?? []);
+  const activities = useMemo(() => buildActivityConditions(report, alerts), [alerts, report]);
+  const latestSourceAt = latestStatusTime(report?.source_status ?? []);
+  const officialAlerts = alerts.filter((alert) => alert.official);
+  const modelAlerts = alerts.filter((alert) => !alert.official);
 
   useEffect(() => {
     if (!error) return;
@@ -184,8 +279,8 @@ const WeatherWidget = ({ autoLoad = true }: WeatherWidgetProps) => {
         </CardHeader>
         <CardContent className="space-y-4 text-amber-900">
           <p>
-            The new Supabase-backed weather system is ready for stored reports. Once the scheduled collector publishes its
-            first run, today&apos;s weather, sea state, beach guidance, and source timestamps will appear here.
+            The Supabase weather system is ready for stored reports. Once the scheduled collector publishes, weather,
+            sea state, beach guidance, and source timestamps will appear here.
           </p>
           <Button type="button" variant="outline" onClick={handleRefresh} disabled={isFetching}>
             {isFetching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
@@ -197,62 +292,137 @@ const WeatherWidget = ({ autoLoad = true }: WeatherWidgetProps) => {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 md:space-y-8">
       {(stale || report.stale_flags.length > 0) && (
         <div className="flex items-start gap-3 border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
           <div>
             {stale
-              ? "Today's weather report has not published yet; showing the most recent source-backed report."
-              : "Some weather sources are incomplete today; the report continues with available verified sources."}
+              ? "Today's report has not published yet; showing the most recent source-backed report."
+              : "Some sources are incomplete today; Ibiza Maps continues with available verified sources."}
+            {aemetPending ? " Official AEMET data is pending the Supabase function secret." : ""}
           </div>
         </div>
       )}
 
-      <section className="border bg-white p-5 shadow-sm md:p-6">
-        <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
-          <div>
-            <div className="mb-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-              <Badge variant="outline" className="border-primary/30 bg-primary/5 text-primary">
-                {formatMadridDate(report.report_date, { weekday: "long", year: "numeric" })}
+      <section className="overflow-hidden border bg-white shadow-sm">
+        <div className="grid gap-0 lg:grid-cols-[1.2fr_0.8fr]">
+          <div className="bg-gradient-to-br from-sky-50 via-white to-emerald-50 p-5 md:p-7">
+            <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              <Badge variant="outline" className="border-primary/30 bg-white text-primary">
+                Today in Ibiza
               </Badge>
+              <span className="inline-flex items-center gap-1">
+                <CalendarDays className="h-4 w-4" />
+                {formatMadridDate(report.report_date, { weekday: "long", year: "numeric" })}
+              </span>
               <span className="inline-flex items-center gap-1">
                 <Clock className="h-4 w-4" />
                 Updated {formatMadridTime(report.last_successful_source_at || report.generated_at)}
               </span>
             </div>
-            <h2 className="text-2xl font-bold leading-tight text-foreground md:text-3xl">{report.headline}</h2>
-            <p className="mt-3 max-w-3xl text-base leading-7 text-muted-foreground">{report.summary}</p>
+
+            <h2 className="text-3xl font-bold leading-tight text-foreground md:text-4xl">{report.headline}</h2>
+            <p className="mt-4 max-w-3xl text-base leading-7 text-muted-foreground">{report.summary}</p>
+
+            <div className="mt-5 flex flex-wrap gap-2">
+              <Badge variant="outline" className="border-sky-200 bg-white text-sky-900">
+                {formatWind(current.wind_speed_kmh, current.wind_direction_label)}
+              </Badge>
+              <Badge variant="outline" className="border-cyan-200 bg-white text-cyan-900">
+                Waves {formatNumber(marine.wave_height_m, " m", 1)}
+              </Badge>
+              <Badge variant="outline" className="border-amber-200 bg-white text-amber-900">
+                UV {formatNumber(daily[0]?.uv_index, "", 1)}
+              </Badge>
+              <Badge variant="outline" className="border-emerald-200 bg-white text-emerald-900">
+                {sourceHealth.updated}/{sourceHealth.total} sources updated
+              </Badge>
+            </div>
           </div>
-          <Button type="button" variant="outline" onClick={handleRefresh} disabled={isFetching} className="md:self-start">
-            {isFetching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-            Refresh
-          </Button>
+
+          <div className="border-t bg-slate-950 p-5 text-white lg:border-l lg:border-t-0 md:p-7">
+            <div className="mb-4 flex items-center gap-2">
+              {officialAlerts.length > 0 ? <ShieldAlert className="h-5 w-5 text-amber-300" /> : <ShieldCheck className="h-5 w-5 text-emerald-300" />}
+              <h3 className="text-lg font-semibold">Official Alert Status</h3>
+            </div>
+
+            {officialAlerts.length > 0 ? (
+              <div className="space-y-3">
+                {officialAlerts.map((alert) => (
+                  <article key={`${alert.source_key || "aemet"}-${alert.title}-${alert.onset_at || ""}`} className="border border-amber-300/40 bg-amber-300/10 p-4">
+                    <Badge variant="outline" className="border-amber-200 text-amber-100">
+                      Official AEMET
+                    </Badge>
+                    <h4 className="mt-3 font-semibold">{alert.title}</h4>
+                    {"summary" in alert && alert.summary && <p className="mt-2 text-sm leading-6 text-amber-50/90">{alert.summary}</p>}
+                    <p className="mt-3 text-xs text-amber-50/80">
+                      {alert.onset_at ? formatMadridTime(alert.onset_at) : "Now"} - {alert.expires_at ? formatMadridTime(alert.expires_at) : "until updated"}
+                    </p>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-3 text-sm leading-6 text-slate-200">
+                <p>No official AEMET alert is stored for this report.</p>
+                <p>
+                  {aemetUpdated
+                    ? "AEMET official sources checked successfully."
+                    : aemetPending
+                      ? "AEMET is configured in the source registry but still needs the Supabase function secret before official alerts can appear."
+                      : "Official alert source status is visible in Source Evidence below."}
+                </p>
+              </div>
+            )}
+
+            <Button type="button" variant="secondary" onClick={handleRefresh} disabled={isFetching} className="mt-5 w-full">
+              {isFetching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+              Refresh displayed report
+            </Button>
+          </div>
         </div>
+      </section>
+
+      <section className="grid gap-3 md:grid-cols-5">
+        {activities.map((item) => {
+          const Icon = item.icon;
+          return (
+            <article key={item.label} className={cn("border p-4 shadow-sm", activityStatusClasses(item.status))}>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <Icon className="h-5 w-5" />
+                <Badge variant="outline" className="border-current text-current">
+                  {item.status}
+                </Badge>
+              </div>
+              <h3 className="font-semibold">{item.label}</h3>
+              <p className="mt-1 text-sm leading-5 opacity-85">{item.detail}</p>
+            </article>
+          );
+        })}
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Metric
           icon={Thermometer}
-          label="Now"
+          label="Temperature"
           value={formatTemperature(current.temperature_c)}
           detail={current.apparent_temperature_c ? `Feels like ${formatTemperature(current.apparent_temperature_c)}` : current.condition || ""}
         />
         <Metric
           icon={Wind}
-          label="Wind"
+          label="Wind and gusts"
           value={formatWind(current.wind_speed_kmh, current.wind_direction_label)}
           detail={current.wind_gust_kmh ? `Gusts near ${Math.round(current.wind_gust_kmh)} km/h` : "Gusts updating"}
         />
         <Metric
           icon={Umbrella}
-          label="Rain"
+          label="Rain window"
           value={formatNumber(daily[0]?.precipitation_probability_pct, "%", 0)}
-          detail={daily[0]?.precipitation_mm ? `${formatNumber(daily[0].precipitation_mm, " mm", 1)} possible today` : "Daily rain window"}
+          detail={daily[0]?.precipitation_mm ? `${formatNumber(daily[0].precipitation_mm, " mm", 1)} possible today` : "Daily probability"}
         />
         <Metric
           icon={Waves}
-          label="Sea"
+          label="Sea state"
           value={formatNumber(marine.wave_height_m, " m", 1)}
           detail={
             marine.sea_surface_temperature_c
@@ -265,41 +435,36 @@ const WeatherWidget = ({ autoLoad = true }: WeatherWidgetProps) => {
       <section className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
         <div className="border bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5 text-primary" />
-            <h3 className="text-lg font-semibold">Official Alerts</h3>
+            <Waves className="h-5 w-5 text-primary" />
+            <h3 className="text-lg font-semibold">Beach And Coast Conditions</h3>
           </div>
-          {alerts.length > 0 ? (
-            <div className="space-y-3">
-              {alerts.map((alert) => (
-                <article key={`${alert.source_key || "alert"}-${alert.title}-${alert.onset_at || ""}`} className={cn("border p-4", alertSeverityClasses(alert.severity))}>
-                  <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <Badge variant="outline" className="border-current text-current">
-                      {alert.official ? "Official AEMET" : "Model concern"}
-                    </Badge>
-                    <span className="text-xs uppercase tracking-normal">{alert.severity || "Weather alert"}</span>
-                  </div>
-                  <h4 className="font-semibold">{alert.title}</h4>
-                  {"summary" in alert && alert.summary && <p className="mt-2 text-sm leading-6">{alert.summary}</p>}
-                  <div className="mt-3 text-xs">
-                    {[alert.onset_at, alert.expires_at].filter(Boolean).length > 0
-                      ? `${alert.onset_at ? formatMadridTime(alert.onset_at) : "Now"} - ${alert.expires_at ? formatMadridTime(alert.expires_at) : "until updated"}`
-                      : alert.zone || "Ibiza and Formentera"}
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm leading-6 text-muted-foreground">
-              No official Ibiza or Formentera weather alert is stored for this report. AEMET official alerts will appear here as soon
-              as the AEMET API key is configured and an alert exists.
-            </p>
-          )}
+          <div className="grid gap-3 md:grid-cols-2">
+            {report.beach_conditions.map((condition) => (
+              <article key={condition.coast} className="border p-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <h4 className="font-semibold">{condition.coast}</h4>
+                  <Badge variant="outline" className={cn("uppercase tracking-normal", beachStatusClasses(condition.status))}>
+                    {condition.status}
+                  </Badge>
+                </div>
+                <p className="text-sm font-medium text-foreground">{condition.headline}</p>
+                <p className="mt-2 text-sm text-muted-foreground">{condition.beaches}</p>
+                <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                  {condition.reasons.map((reason) => (
+                    <span key={reason} className="border bg-slate-50 px-2 py-1">
+                      {reason}
+                    </span>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
         </div>
 
         <div className="border bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center gap-2">
             <CloudSun className="h-5 w-5 text-primary" />
-            <h3 className="text-lg font-semibold">Today&apos;s Light</h3>
+            <h3 className="text-lg font-semibold">Light, UV And Timing</h3>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="border bg-slate-50 p-4">
@@ -313,11 +478,31 @@ const WeatherWidget = ({ autoLoad = true }: WeatherWidgetProps) => {
               <div className="mt-1 text-xl font-semibold">{formatMadridTime(daily[0]?.sunset_at)}</div>
             </div>
           </div>
-          <div className="mt-4 border bg-slate-50 p-4 text-sm text-muted-foreground">
+          <div className="mt-4 border bg-slate-50 p-4 text-sm leading-6 text-muted-foreground">
             UV index {formatNumber(daily[0]?.uv_index, "", 1)}. Use local beach flags and lifeguard advice before swimming.
           </div>
         </div>
       </section>
+
+      {modelAlerts.length > 0 && (
+        <section className="border bg-white p-5 shadow-sm">
+          <div className="mb-4 flex items-center gap-2">
+            <Activity className="h-5 w-5 text-primary" />
+            <h3 className="text-lg font-semibold">Non-Official Weather Concerns</h3>
+          </div>
+          <div className="space-y-3">
+            {modelAlerts.map((alert) => (
+              <article key={`${alert.source_key || "model"}-${alert.title}-${alert.onset_at || ""}`} className={cn("border p-4", alertSeverityClasses(alert.severity))}>
+                <Badge variant="outline" className="border-current text-current">
+                  Model/free-source concern
+                </Badge>
+                <h4 className="mt-3 font-semibold">{alert.title}</h4>
+                {"summary" in alert && alert.summary && <p className="mt-2 text-sm leading-6">{alert.summary}</p>}
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="border bg-white p-5 shadow-sm">
         <div className="mb-4 flex items-center gap-2">
@@ -341,35 +526,7 @@ const WeatherWidget = ({ autoLoad = true }: WeatherWidgetProps) => {
 
       <section className="border bg-white p-5 shadow-sm">
         <div className="mb-4 flex items-center gap-2">
-          <Waves className="h-5 w-5 text-primary" />
-          <h3 className="text-lg font-semibold">Beach And Coast Conditions</h3>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          {report.beach_conditions.map((condition) => (
-            <article key={condition.coast} className="border p-4">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <h4 className="font-semibold">{condition.coast}</h4>
-                <Badge variant="outline" className={cn("uppercase tracking-normal", beachStatusClasses(condition.status))}>
-                  {condition.status}
-                </Badge>
-              </div>
-              <p className="text-sm font-medium text-foreground">{condition.headline}</p>
-              <p className="mt-2 text-sm text-muted-foreground">{condition.beaches}</p>
-              <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                {condition.reasons.map((reason) => (
-                  <span key={reason} className="border bg-slate-50 px-2 py-1">
-                    {reason}
-                  </span>
-                ))}
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="border bg-white p-5 shadow-sm">
-        <div className="mb-4 flex items-center gap-2">
-          <CloudSun className="h-5 w-5 text-primary" />
+          <CalendarDays className="h-5 w-5 text-primary" />
           <h3 className="text-lg font-semibold">6-Day Forecast</h3>
         </div>
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
@@ -398,13 +555,14 @@ const WeatherWidget = ({ autoLoad = true }: WeatherWidgetProps) => {
       <section className="border bg-white p-5 shadow-sm">
         <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5 text-primary" />
+            <Compass className="h-5 w-5 text-primary" />
             <h3 className="text-lg font-semibold">Source Evidence</h3>
           </div>
           <div className="text-sm text-muted-foreground">
             {sourceHealth.updated}/{sourceHealth.total} sources updated
             {sourceHealth.blocked > 0 ? `, ${sourceHealth.blocked} awaiting key` : ""}
             {sourceHealth.failed > 0 ? `, ${sourceHealth.failed} with issues` : ""}
+            {latestSourceAt ? ` - latest check ${formatMadridTime(latestSourceAt)}` : ""}
           </div>
         </div>
 
@@ -436,7 +594,23 @@ const WeatherWidget = ({ autoLoad = true }: WeatherWidgetProps) => {
             </div>
           ))}
         </div>
+
+        {report.source_disagreements.length > 0 && (
+          <div className="mt-4 border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <div className="mb-1 flex items-center gap-2 font-semibold">
+              <AlertTriangle className="h-4 w-4" />
+              Source disagreement detected
+            </div>
+            Ibiza Maps keeps separate source readings when sources disagree; the public summary uses the best available
+            normalized report and keeps disagreement evidence here.
+          </div>
+        )}
       </section>
+
+      <div className="flex items-start gap-2 text-xs leading-5 text-muted-foreground">
+        <CheckCircle2 className="mt-0.5 h-4 w-4 flex-none text-emerald-600" />
+        Weather is refreshed by cloud automation. Public summaries show stored source-backed data, not live AI-generated claims.
+      </div>
     </div>
   );
 };
