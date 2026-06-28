@@ -148,16 +148,16 @@ const sourceDomain = (url: string) => {
 };
 
 const SPANISH_TEXT_PATTERN =
-  /\b(el|la|los|las|un|una|unos|unas|que|para|por|con|sin|sobre|desde|hasta|este|esta|estos|estas|del|al|se|sus|más|año|años|isla|playa|viviendas|trabajadores|gobierno|ayuntamiento|consell|policía|fiestas|abre|regresa|desembarca|protagoniza|protagonizan|continúa|celebra)\b/i;
+  /\b(el|la|los|las|un|una|unos|unas|que|para|por|con|sin|sobre|desde|hasta|este|esta|estos|estas|del|al|se|sus|más|ano|año|años|isla|playa|viviendas|trabajadores|gobierno|ayuntamiento|consell|policía|fiestas|abre|abierto|regresa|desembarca|protagoniza|protagonizan|continúa|celebra|espera|empezar[aá]n|financiaci[oó]n|reconoce|robos|material|habitual|empresas|pide|vivienda|crecimiento|poblacional|alcalde|derecho|constitucional|dejado|atender|mucho|tiempo|desesperada|b[uú]squeda|martillo|hidr[aá]ulico|robado|pierdo|euros|d[ií]a|tejado|patronal|sector|construcci[oó]n|obra|niñas|aborda|importancia|salud|mental|sorpresa|grata|direcci[oó]n|colegio|govern|tras|ante)\b/i;
 
 const looksSpanish = (value: string) => SPANISH_TEXT_PATTERN.test(value);
 
-const translateTextFallback = async (value: string) => {
+const translateTextFallback = async (value: string, force = false) => {
   const normalized = normalizeWhitespace(value);
-  if (!normalized || !looksSpanish(normalized)) return normalized;
+  if (!normalized || (!force && !looksSpanish(normalized))) return normalized;
 
   const response = await fetch(
-    `https://translate.googleapis.com/translate_a/single?client=gtx&sl=es&tl=en&dt=t&q=${encodeURIComponent(normalized)}`,
+    `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q=${encodeURIComponent(normalized)}`,
   );
   if (!response.ok) return normalized;
 
@@ -165,27 +165,46 @@ const translateTextFallback = async (value: string) => {
   return normalizeWhitespace(data?.[0]?.map((part: unknown[]) => part?.[0] || "").join("") || normalized);
 };
 
-const summarizeWithAi = async (candidate: ClassifiedNewsCandidate, evidenceHash: string, enabled: boolean) => {
+type DisplayTextResult = {
+  headline: string;
+  summary: string;
+  model: string | null;
+  hash: string | null;
+  translationStatus: "translated" | "ai_polished" | "manual" | "backfilled" | "failed";
+};
+
+const buildTranslationFallback = async (candidate: ClassifiedNewsCandidate, evidenceHash: string): Promise<DisplayTextResult> => {
+  const fallbackHeadline = normalizeWhitespace(candidate.headline);
+  const fallbackSummary = normalizeWhitespace(candidate.summary_seed || candidate.headline);
+  const forceTranslation = candidate.language !== "en";
+  const headline = await translateTextFallback(fallbackHeadline, forceTranslation);
+  const summary = await translateTextFallback(fallbackSummary, forceTranslation);
+  const combined = `${headline} ${summary}`;
+
+  if (looksSpanish(combined)) {
+    return { headline, summary, model: null, hash: null, translationStatus: "failed" };
+  }
+
+  return {
+    headline,
+    summary,
+    model: "google_translate_fallback",
+    hash: await sha256(`${evidenceHash}|${headline}|${summary}`),
+    translationStatus: "translated",
+  };
+};
+
+const summarizeWithAi = async (candidate: ClassifiedNewsCandidate, evidenceHash: string, enabled: boolean): Promise<DisplayTextResult> => {
   const fallbackHeadline = normalizeWhitespace(candidate.headline);
   const fallbackSummary = normalizeWhitespace(candidate.summary_seed || candidate.headline);
 
   if (!enabled) {
-    return {
-      headline: fallbackHeadline,
-      summary: fallbackSummary,
-      model: null as string | null,
-      hash: null as string | null,
-    };
+    return buildTranslationFallback(candidate, evidenceHash);
   }
 
   const apiKey = Deno.env.get("LOVABLE_API_KEY");
   if (!apiKey) {
-    return {
-      headline: fallbackHeadline,
-      summary: fallbackSummary,
-      model: null as string | null,
-      hash: null as string | null,
-    };
+    return buildTranslationFallback(candidate, evidenceHash);
   }
 
   const model = "google/gemini-2.5-flash";
@@ -242,7 +261,7 @@ const summarizeWithAi = async (candidate: ClassifiedNewsCandidate, evidenceHash:
 
       if (!response.ok) {
         console.warn("AI summary skipped", response.status, await response.text());
-        return { headline: fallbackHeadline, summary: fallbackSummary, model: null, hash: null };
+        return buildTranslationFallback(candidate, evidenceHash);
       }
 
       const data = await response.json();
@@ -258,27 +277,21 @@ const summarizeWithAi = async (candidate: ClassifiedNewsCandidate, evidenceHash:
         summary,
         model,
         hash: await sha256(`${evidenceHash}|${headline}|${summary}`),
+        translationStatus: "ai_polished",
       };
     }
 
-    const headline = await translateTextFallback(fallbackHeadline);
-    const summary = await translateTextFallback(fallbackSummary);
-    return {
-      headline,
-      summary,
-      model: "google_translate_fallback",
-      hash: await sha256(`${evidenceHash}|${headline}|${summary}`),
-    };
+    return buildTranslationFallback(candidate, evidenceHash);
   } catch (error) {
     console.warn("AI summary fallback", error);
-    return { headline: fallbackHeadline, summary: fallbackSummary, model: null, hash: null };
+    return buildTranslationFallback(candidate, evidenceHash);
   }
 };
 
 const getExistingStory = async (supabase: SupabaseClient, sourceKey: string, canonicalUrl: string) => {
   const { data, error } = await supabase
     .from("ibiza_news_stories")
-    .select("id,status,evidence_hash,summary,headline,ai_summary_model,ai_summary_hash")
+    .select("id,status,evidence_hash,summary,headline,ai_summary_model,ai_summary_hash,display_language,translation_status")
     .eq("source_key", sourceKey)
     .eq("canonical_url", canonicalUrl)
     .maybeSingle();
@@ -292,6 +305,8 @@ const getExistingStory = async (supabase: SupabaseClient, sourceKey: string, can
     headline: string;
     ai_summary_model: string | null;
     ai_summary_hash: string | null;
+    display_language: string | null;
+    translation_status: string | null;
   } | null;
 };
 
@@ -315,20 +330,25 @@ const findSemanticDuplicate = async (supabase: SupabaseClient, candidate: Classi
 const shouldRejectExistingPublishedStory = (reason?: string) =>
   reason === "missing Ibiza-local relevance signal" || reason === "missing direct source URL" || reason === "obituary notices are not public news";
 
+const canPublishEnglishText = (summary: DisplayTextResult) =>
+  Boolean(summary.hash && summary.translationStatus !== "failed" && !looksSpanish(`${summary.headline} ${summary.summary}`));
+
 const nextStoryStatus = (
   existingStatus: string | undefined,
   isDuplicate: boolean,
   publishDecision: { publishable: boolean; reason?: string },
   request: Required<CollectRequest>,
+  englishReady: boolean,
 ) => {
   if (existingStatus === "published") {
+    if (!englishReady) return "staged";
     return publishDecision.publishable || !shouldRejectExistingPublishedStory(publishDecision.reason) ? "published" : "rejected";
   }
 
   if (existingStatus === "duplicate") return "duplicate";
 
   if (isDuplicate) return "duplicate";
-  if (publishDecision.publishable && request.publish && !request.dry_run) return "published";
+  if (publishDecision.publishable && request.publish && !request.dry_run && englishReady) return "published";
   if (publishDecision.publishable) return "staged";
   return "skipped";
 };
@@ -393,7 +413,7 @@ serve(async (req) => {
     let storiesPublished = 0;
     let duplicatesSeen = 0;
     let aiSummariesUsed = 0;
-    const publishedStories: Array<{ id: string; headline: string; summary: string; digest_section: string; source_url: string }> = [];
+    const publishedStories: Array<{ id: string; headline: string; summary: string; digest_section: string; source_url: string; curation_score: number }> = [];
     const skippedSources: Array<Record<string, unknown>> = [];
     const sourceFailures: Array<Record<string, unknown>> = [];
     const sourcesChecked: string[] = [];
@@ -472,13 +492,14 @@ serve(async (req) => {
             });
           }
 
-          const nextStatus = nextStoryStatus(existingStory?.status, isDuplicate, publishDecision, request);
-
           const canPreserveExistingAiSummary = Boolean(
             existingStory?.ai_summary_hash &&
               existingStory.evidence_hash === evidenceHash &&
               existingStory.headline &&
-              existingStory.summary,
+              existingStory.summary &&
+              existingStory.display_language === "en" &&
+              ["translated", "ai_polished", "manual", "backfilled"].includes(existingStory.translation_status || "") &&
+              !looksSpanish(`${existingStory.headline} ${existingStory.summary}`),
           );
           const needsAiSummary = !existingStory || existingStory.evidence_hash !== evidenceHash || !existingStory.ai_summary_hash;
           const canUseAi = Boolean(
@@ -494,9 +515,21 @@ serve(async (req) => {
               summary: existingStory!.summary,
               model: existingStory!.ai_summary_model,
               hash: existingStory!.ai_summary_hash,
+              translationStatus: existingStory!.translation_status as DisplayTextResult["translationStatus"],
             }
             : await summarizeWithAi(classified, evidenceHash, canUseAi);
-          if (summary.model) aiSummariesUsed += 1;
+          if (summary.model === "google/gemini-2.5-flash") aiSummariesUsed += 1;
+
+          const englishReady = canPublishEnglishText(summary);
+          const nextStatus = nextStoryStatus(existingStory?.status, isDuplicate, publishDecision, request, englishReady);
+          if (publishDecision.publishable && !englishReady) {
+            skippedSources.push({
+              source_key: source.source_key,
+              headline: classified.headline,
+              url: canonicalUrl,
+              reason: "English display text failed validation",
+            });
+          }
 
           const storyPayload = {
             source_key: classified.source_key,
@@ -514,11 +547,15 @@ serve(async (req) => {
             story_date: classified.published_at?.slice(0, 10) || request.target_date,
             category: classified.category,
             area: classified.area,
+            primary_area: classified.primary_area,
             significance: classified.significance,
             status: nextStatus,
             digest_section: classified.digest_section,
             santa_eularia: classified.santa_eularia,
             ibiza_maps_relevant: classified.ibiza_maps_relevant,
+            curation_score: classified.curation_score,
+            display_language: englishReady ? "en" : null,
+            translation_status: summary.translationStatus,
             dedupe_key: classified.dedupe_key,
             duplicate_of: duplicate?.id ?? null,
             ai_summary_model: summary.model,
@@ -532,14 +569,14 @@ serve(async (req) => {
             },
           };
 
-          let storyRow: { id: string; status: string; headline: string; summary: string; digest_section: string; source_url: string } | null = null;
+          let storyRow: { id: string; status: string; headline: string; summary: string; digest_section: string; source_url: string; curation_score: number } | null = null;
 
           if (existingStory) {
             const { data: updated, error: updateError } = await supabase
               .from("ibiza_news_stories")
               .update(storyPayload)
               .eq("id", existingStory.id)
-              .select("id,status,headline,summary,digest_section,source_url")
+              .select("id,status,headline,summary,digest_section,source_url,curation_score")
               .single();
 
             if (updateError) throw updateError;
@@ -548,7 +585,7 @@ serve(async (req) => {
             const { data: inserted, error: insertError } = await supabase
               .from("ibiza_news_stories")
               .insert(storyPayload)
-              .select("id,status,headline,summary,digest_section,source_url")
+              .select("id,status,headline,summary,digest_section,source_url,curation_score")
               .single();
 
             if (insertError) throw insertError;

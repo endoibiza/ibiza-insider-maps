@@ -56,9 +56,10 @@ serve(async (req) => {
       supabase
         .from("ibiza_news_public")
         .select(
-          "id,notion_page_id,headline,summary,category,area,source_url,date,created_at,updated_at,significance,ibiza_maps_relevant,santa_eularia,source_label,source_domain,digest_section,published_at,legacy_source",
+          "id,notion_page_id,headline,summary,category,area,source_url,date,created_at,updated_at,significance,ibiza_maps_relevant,santa_eularia,source_label,source_domain,digest_section,published_at,legacy_source,display_language,translation_status,primary_area,curation_score",
         )
         .order("date", { ascending: false })
+        .order("curation_score", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(limit),
     ]);

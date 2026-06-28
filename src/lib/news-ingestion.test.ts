@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  calculateCurationScore,
   classifyCandidate,
   extractFeedCandidates,
   isDirectSourceUrl,
@@ -249,5 +250,61 @@ describe("Ibiza news ingestion helpers", () => {
     });
 
     expect(classified.area).toEqual(["San Antonio"]);
+  });
+
+  it("keeps Formentera as a first-class area when the article is Formentera-specific", () => {
+    const raw: RawNewsCandidate = {
+      source_key: "periodico-pitiusas-atom",
+      source_name: "Periódico de Ibiza y Formentera — Pitiusas",
+      source_type: "atom",
+      publish_mode: "auto",
+      source_url: "https://www.periodicodeibiza.es/pitiusas.rss",
+      canonical_url: "https://www.periodicodeibiza.es/pitiusas/formentera/2026/06/28/formentera-vehiculos-ibiza.html",
+      headline: "Formentera revisa autorizaciones para vehículos de Ibiza",
+      source_description: "El Consell de Formentera revisa permisos de larga duración para vehículos procedentes de Ibiza.",
+      published_at: "2026-06-28T08:00:00.000Z",
+      language: "es",
+      raw_metadata: {},
+    };
+
+    const classified = classifyCandidate(raw, {
+      source_key: "periodico-pitiusas-atom",
+      source_name: "Periódico de Ibiza y Formentera — Pitiusas",
+      source_type: "atom",
+      source_url: "https://www.periodicodeibiza.es/pitiusas.rss",
+      default_language: "es",
+      publish_mode: "auto",
+      source_scope: "local",
+    });
+
+    expect(classified.area).toContain("Formentera");
+    expect(classified.primary_area).toBe("Formentera");
+  });
+
+  it("ranks high-impact local infrastructure above routine weather pages", () => {
+    const infrastructure: RawNewsCandidate = {
+      source_key: "diario-general-rss",
+      source_name: "Diario de Ibiza RSS",
+      source_type: "rss",
+      publish_mode: "auto",
+      source_url: "https://www.diariodeibiza.es/rss/",
+      canonical_url: "https://www.diariodeibiza.es/ibiza/2026/06/28/ibiza-vivienda-transporte-123.html",
+      headline: "Ibiza approves new housing and transport measures",
+      source_description: "The council decision affects housing, public transport, and residents across the island.",
+      published_at: "2026-06-28T08:00:00.000Z",
+      language: "en",
+      raw_metadata: {},
+    };
+    const weather: RawNewsCandidate = {
+      ...infrastructure,
+      canonical_url: "https://www.diariodeibiza.es/tiempo/2026/06/28/tiempo-sant-antoni-prevision.html",
+      headline: "Weather in Sant Antoni de Portmany: forecast for today",
+      source_description: "A routine weather forecast for the municipality.",
+    };
+
+    const highImpactScore = calculateCurationScore(infrastructure, "Infrastructure", ["Island-Wide"], "Notable");
+    const routineWeatherScore = calculateCurationScore(weather, "Other", ["San Antonio"], "Minor");
+
+    expect(highImpactScore).toBeGreaterThan(routineWeatherScore);
   });
 });
