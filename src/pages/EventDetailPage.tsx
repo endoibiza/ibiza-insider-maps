@@ -14,6 +14,8 @@ import {
   getEventCtas,
   getEventDescription,
   getEventImage,
+  getEventSourceConfidence,
+  getEventSourceLabel,
   hasAvailableRates,
   isFourvenuesEvent,
   normalizeVenueDisplayName,
@@ -76,6 +78,8 @@ const EventDetailPage = () => {
   const pageTitle = event ? `${event.event_name} | Ibiza Maps` : "Event | Ibiza Maps";
   const pageDescription = description || event?.type || "Ibiza event details from Ibiza Maps.";
   const venueLabel = event ? normalizeVenueDisplayName(event.venue) : "";
+  const sourceLabel = event ? getEventSourceLabel(event) : "";
+  const sourceConfidence = event ? getEventSourceConfidence(event) : "";
 
   const trackEventCta = (location = "primary_cta") => {
     if (!event) return;
@@ -130,6 +134,9 @@ const EventDetailPage = () => {
                 {event.type && <Badge variant="outline">{event.type}</Badge>}
                 {event.residents_pass && <Badge variant="outline">Residents pass</Badge>}
                 {isFourvenuesEvent(event) && <Badge variant="outline">Fourvenues</Badge>}
+                <Badge variant="outline" className="gap-1 border-emerald-200 bg-emerald-50 text-emerald-700">
+                  {sourceConfidence}
+                </Badge>
               </div>
 
               <h1 className="text-4xl font-bold tracking-tight md:text-5xl">{event.event_name}</h1>
@@ -193,6 +200,22 @@ const EventDetailPage = () => {
                       </p>
                     </div>
                   )}
+
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-sm font-medium text-slate-800">Source evidence</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{sourceLabel}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Social and community signals are used only as private review hints. Public event details require partner or source-backed confirmation.
+                    </p>
+                    {event.event_url && (
+                      <Button asChild variant="outline" size="sm" className="mt-3 w-full">
+                        <a href={event.event_url} target="_blank" rel="noopener noreferrer">
+                          Open source page
+                          <ExternalLink className="ml-2 h-4 w-4" />
+                        </a>
+                      </Button>
+                    )}
+                  </div>
 
                   {primaryCta && (
                     <Button asChild className="w-full" size="lg" onClick={() => trackEventCta(primaryCta.kind)}>

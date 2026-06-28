@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, AlertTriangle, ExternalLink, Lock, Radio, ShieldCheck } from "lucide-react";
+import { Activity, AlertTriangle, Ban, ExternalLink, Lock, Radio, ShieldCheck } from "lucide-react";
 import SEOHead from "@/components/SEOHead";
 import { useAuth } from "@/components/AuthProvider";
 import { Badge } from "@/components/ui/badge";
@@ -48,6 +48,12 @@ const signalCategories: Array<"all" | SignalCategory> = [
   "source_hint",
 ];
 
+const describeRunIssue = (issue: Record<string, unknown>) => {
+  const source = issue.source_key || issue.source || issue.label || "Source";
+  const reason = issue.reason || issue.error || issue.credential_name || "Needs review";
+  return `${String(source)}: ${String(reason)}`;
+};
+
 const fetchSignalOpsData = async () => {
   const [{ data: runs, error: runsError }, { data: items, error: itemsError }] = await Promise.all([
     signalSupabase
@@ -91,6 +97,14 @@ const SignalOpsPage = () => {
   const sourceFailures = latestRun?.source_failures?.length ?? 0;
   const skippedSources = latestRun?.skipped_sources?.length ?? 0;
   const credentialRequirements = latestRun?.credential_requirements?.length ?? 0;
+  const paidOrCredentialedIssues = [
+    ...(latestRun?.credential_requirements ?? []),
+    ...(latestRun?.skipped_sources ?? []).filter((issue) => {
+      const reason = String(issue.reason || issue.credential_name || "").toLowerCase();
+      const source = String(issue.source_key || issue.source || "").toLowerCase();
+      return reason.includes("credential") || reason.includes("paid") || source.includes("xai") || source.includes("x-");
+    }),
+  ];
 
   if (loading) {
     return <div className="min-h-screen bg-slate-50" />;
@@ -203,6 +217,43 @@ const SignalOpsPage = () => {
                   <div>
                     <p className="text-xs uppercase tracking-wide text-muted-foreground">Needs attention</p>
                     <p className="font-semibold">{sourceFailures + skippedSources + credentialRequirements}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="mb-6 grid gap-3 lg:grid-cols-[minmax(0,1fr)_360px]">
+              <Card className="border-emerald-200 bg-emerald-50/70">
+                <CardContent className="p-5">
+                  <div className="flex items-start gap-3">
+                    <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" />
+                    <div>
+                      <h2 className="font-semibold text-emerald-950">Private supporting evidence only</h2>
+                      <p className="mt-1 text-sm text-emerald-900">
+                        These rows can guide News, Weather, and Events review, but they do not publish public facts without a source-backed confirmation step.
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-slate-200 bg-white">
+                <CardContent className="p-5">
+                  <div className="flex items-start gap-3">
+                    <Ban className="mt-0.5 h-5 w-5 shrink-0 text-slate-700" />
+                    <div>
+                      <h2 className="font-semibold">Paid X/xAI status</h2>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Official X and Grok paths stay disabled until credentials and spending caps are approved.
+                      </p>
+                      {paidOrCredentialedIssues.length > 0 && (
+                        <ul className="mt-3 space-y-1 text-xs text-muted-foreground">
+                          {paidOrCredentialedIssues.slice(0, 3).map((issue, index) => (
+                            <li key={`${describeRunIssue(issue)}-${index}`}>{describeRunIssue(issue)}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>

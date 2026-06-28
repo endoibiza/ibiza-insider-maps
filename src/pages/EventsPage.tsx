@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { CalendarDays, MapPin, Ticket } from "lucide-react";
+import { CalendarDays, ExternalLink, MapPin, ShieldCheck, Ticket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,8 @@ import {
   formatEventDate,
   getEventCardDescription,
   getEventImage,
+  getEventSourceConfidence,
+  getEventSourceLabel,
   hasAvailableRates,
   isFourvenuesEvent,
   normalizeVenueDisplayName,
@@ -161,6 +163,8 @@ const EventsPage = () => {
               const image = getEventImage(event);
               const description = getEventCardDescription(event);
               const venueLabel = normalizeVenueDisplayName(event.venue);
+              const sourceLabel = getEventSourceLabel(event);
+              const sourceConfidence = getEventSourceConfidence(event);
 
               return (
                 <Card key={event.id} className="overflow-hidden border-border/70">
@@ -203,11 +207,34 @@ const EventsPage = () => {
                       {event.type && <Badge variant="outline">{event.type}</Badge>}
                       {event.residents_pass && <Badge variant="outline">Residents pass</Badge>}
                       {isFourvenuesEvent(event) && <Badge variant="outline">Fourvenues</Badge>}
+                      <Badge variant="outline" className="gap-1 border-emerald-200 bg-emerald-50 text-emerald-700">
+                        <ShieldCheck className="h-3 w-3" />
+                        {sourceConfidence}
+                      </Badge>
                     </div>
 
                     {description && (
                       <p className="mt-3 line-clamp-3 text-sm text-muted-foreground">{description}</p>
                     )}
+
+                    <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                      <div className="mb-1 flex items-center gap-2 font-medium text-slate-800">
+                        <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                        Source evidence
+                      </div>
+                      <p>{sourceLabel}</p>
+                      {event.event_url && (
+                        <a
+                          href={event.event_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-2 inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                        >
+                          Official/source page
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
+                    </div>
 
                     <div className="mt-auto flex flex-wrap gap-2 pt-5">
                       <Button asChild className="flex-1">

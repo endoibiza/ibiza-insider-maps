@@ -1,6 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, ExternalLink, List, Loader2, Map, MapPin, Newspaper, RefreshCw, ShieldCheck, type LucideIcon } from "lucide-react";
+import {
+  AlertTriangle,
+  ExternalLink,
+  FileText,
+  Globe2,
+  List,
+  Loader2,
+  Map,
+  MapPin,
+  Newspaper,
+  RefreshCw,
+  ShieldCheck,
+  type LucideIcon,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { NewsSkeleton } from "@/components/ui/skeleton-loaders";
@@ -89,6 +102,8 @@ const StoryCard = ({ story, featured = false }: { story: PublicNewsStory; featur
   const areas = splitAreaLabels(story.area);
   const displayAreas = story.primary_area && !areas.includes(story.primary_area) ? [story.primary_area, ...areas] : areas;
   const source = getSourceHost(story);
+  const publishedAt = story.published_at || story.date || story.created_at;
+  const sourceStatus = story.translation_status === "translated" ? "English translation" : "Source summary";
 
   return (
     <article
@@ -114,6 +129,40 @@ const StoryCard = ({ story, featured = false }: { story: PublicNewsStory; featur
         {story.headline}
       </h2>
       <p className={cn("mt-3 text-sm leading-6 text-muted-foreground", featured ? "md:text-base" : "")}>{story.summary}</p>
+
+      <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+        <div className="mb-2 flex items-center gap-2 font-medium text-slate-800">
+          <ShieldCheck className="h-4 w-4 text-emerald-600" />
+          Source evidence
+        </div>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <span className="inline-flex items-center gap-1.5">
+            <Globe2 className="h-3.5 w-3.5" />
+            {source}
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <FileText className="h-3.5 w-3.5" />
+            {sourceStatus}
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            Public source linked
+          </span>
+        </div>
+        {publishedAt && (
+          <p className="mt-2 text-muted-foreground">
+            Collected from the publisher around{" "}
+            {new Intl.DateTimeFormat("en-GB", {
+              timeZone: "Europe/Madrid",
+              day: "numeric",
+              month: "short",
+              hour: "2-digit",
+              minute: "2-digit",
+            }).format(new Date(publishedAt))}
+            .
+          </p>
+        )}
+      </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
         <span>{source}</span>

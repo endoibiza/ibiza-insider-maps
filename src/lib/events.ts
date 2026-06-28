@@ -168,5 +168,27 @@ export const getEventCta = (
     CommercialEventFields,
 ) => getEventCtas(event)[0] ?? null;
 
-export const isFourvenuesEvent = (event: Pick<EventRecord, "notion_page_id" | "fourvenues_event_id">) =>
+export const isFourvenuesEvent = (event: Partial<Pick<EventRecord, "notion_page_id" | "fourvenues_event_id">>) =>
   Boolean(event.fourvenues_event_id || event.notion_page_id?.startsWith("fourvenues:"));
+
+export const getEventSourceLabel = (
+  event: Pick<EventRecord, "source" | "event_url"> & Partial<Pick<EventRecord, "notion_page_id" | "fourvenues_event_id">>,
+) => {
+  if (isFourvenuesEvent(event)) return "Fourvenues partner feed";
+  if (event.source) return event.source;
+
+  try {
+    return event.event_url ? new URL(event.event_url).hostname.replace(/^www\./, "") : "Reviewed source";
+  } catch {
+    return "Reviewed source";
+  }
+};
+
+export const getEventSourceConfidence = (
+  event: Pick<EventRecord, "event_url" | "source_missing_since"> & Partial<Pick<EventRecord, "notion_page_id" | "fourvenues_event_id">>,
+) => {
+  if (event.source_missing_since) return "Needs source review";
+  if (isFourvenuesEvent(event)) return "Partner verified";
+  if (event.event_url) return "Source linked";
+  return "Reviewed listing";
+};
