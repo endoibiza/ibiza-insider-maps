@@ -172,6 +172,55 @@ describe("Ibiza news ingestion helpers", () => {
     });
   });
 
+  it("does not treat San Jose, California as Sant Josep / San José, Ibiza", () => {
+    const raw: RawNewsCandidate = {
+      source_key: "diario-general-rss",
+      source_name: "Diario de Ibiza RSS",
+      source_type: "rss",
+      publish_mode: "auto",
+      source_url: "https://www.diariodeibiza.es/rss/",
+      canonical_url:
+        "https://www.diariodeibiza.es/internacional/2026/06/29/muerto-herido-grave-tiroteo-fan-zone-retransmision-partidos-mundial-san-jose-california-131920085.html",
+      headline: "One Dead, One Seriously Injured in Shooting at 2026 World Cup Fan Zone in California",
+      source_description:
+        "A shooting at a popular entertainment venue in San Jose, California, resulted in one death and one serious injury.",
+      published_at: "2026-06-29T08:00:00.000Z",
+      language: "es",
+      raw_metadata: {},
+    };
+
+    const classified = classifyCandidate(raw, rssSource);
+
+    expect(classified.area).toEqual(["Island-Wide"]);
+    expect(classified.ibiza_maps_relevant).toBe(false);
+    expect(shouldPublishCandidate(classified, "2026-06-29")).toEqual({
+      publishable: false,
+      reason: "missing Ibiza-local relevance signal",
+    });
+  });
+
+  it("allows ambiguous English municipality names only with explicit Ibiza context", () => {
+    const raw: RawNewsCandidate = {
+      source_key: "diario-general-rss",
+      source_name: "Diario de Ibiza RSS",
+      source_type: "rss",
+      publish_mode: "auto",
+      source_url: "https://www.diariodeibiza.es/rss/",
+      canonical_url: "https://www.diariodeibiza.es/ibiza/2026/06/29/taxis-san-antonio-ibiza-131920001.html",
+      headline: "Taxi service changes in San Antonio, Ibiza this summer",
+      source_description: "The changes affect visitors and residents in Ibiza.",
+      published_at: "2026-06-29T08:00:00.000Z",
+      language: "en",
+      raw_metadata: {},
+    };
+
+    const classified = classifyCandidate(raw, rssSource);
+
+    expect(classified.area).toContain("San Antonio");
+    expect(classified.ibiza_maps_relevant).toBe(true);
+    expect(shouldPublishCandidate(classified, "2026-06-29")).toEqual({ publishable: true });
+  });
+
   it("does not publish obituary items from general feeds without local signal", () => {
     const raw: RawNewsCandidate = {
       source_key: "diario-general-rss",

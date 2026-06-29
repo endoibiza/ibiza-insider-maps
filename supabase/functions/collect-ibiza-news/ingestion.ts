@@ -77,14 +77,22 @@ const CATEGORY_KEYWORDS: Array<[string, RegExp]> = [
 const AREA_KEYWORDS: Array<[string, RegExp]> = [
   ["Santa Eulària", /\b(santa eul[àa]ria|santa eularia|santa eulalia|es canar|es can[áa]|cala llonga|jes[uú]s|puig d'en valls)\b/i],
   ["Ibiza Town", /\b(eivissa|ibiza town|vila|dalt vila|platja d'en bossa|playa d'en bossa)\b/i],
-  ["San Antonio", /\b(sant antoni|san antonio|portmany|west end|ses variades|cala de bou)\b/i],
-  ["San José", /\b(sant josep|san jos[eé]|sant jordi|es cubells|cala vedella|cala tarida)\b/i],
-  ["Sant Joan", /\b(sant joan|san juan|portinatx|sant miquel|san miguel)\b/i],
+  ["San Antonio", /\b(sant antoni|portmany|west end|ses variades|cala de bou)\b/i],
+  ["San José", /\b(sant josep(?: de sa talaia)?|sant jordi|es cubells|cala vedella|cala tarida)\b/i],
+  ["Sant Joan", /\b(sant joan|portinatx|sant miquel|san miguel)\b/i],
   ["Formentera", /\b(formentera)\b/i],
 ];
 
 const LOCAL_SIGNAL_PATTERN =
-  /\b(ibiza|eivissa|piti[uü]sas|formentera|santa eul[àa]ria|santa eularia|santa eulalia|sant antoni|san antonio|portmany|west end|ses variades|sant josep|san jos[eé]|sant joan|san juan|sant rafael|sant rafel|sant jordi|sant miquel|san miguel|es canar|es can[áa]|cala llonga|cala bou|cala vedella|cala tarida|es cubells|portinatx|jes[uú]s|puig d'en valls|dalt vila|playa d'en bossa|platja d'en bossa)\b/i;
+  /\b(ibiza|eivissa|piti[uü]sas|formentera|santa eul[àa]ria|santa eularia|santa eulalia|sant antoni|portmany|west end|ses variades|sant josep(?: de sa talaia)?|sant joan|sant rafael|sant rafel|sant jordi|sant miquel|san miguel|es canar|es can[áa]|cala llonga|cala bou|cala vedella|cala tarida|es cubells|portinatx|jes[uú]s|puig d'en valls|dalt vila|playa d'en bossa|platja d'en bossa)\b/i;
+
+const IBIZA_CONTEXT_PATTERN = /\b(ibiza|eivissa|piti[uü]sas|formentera)\b/i;
+
+const AMBIGUOUS_AREA_KEYWORDS: Array<[string, RegExp]> = [
+  ["San Antonio", /\bsan antonio\b/i],
+  ["San José", /\bsan jos[eé]\b/i],
+  ["Sant Joan", /\bsan juan\b/i],
+];
 
 export function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
@@ -359,8 +367,14 @@ function classifyCategory(candidate: RawNewsCandidate): string {
 }
 
 function classifyArea(candidate: RawNewsCandidate, source: NewsSourceConfig): string[] {
-  const haystack = `${candidate.headline} ${candidate.source_description ?? ""}`;
+  const path = candidate.canonical_url ? new URL(candidate.canonical_url).pathname.replace(/[-_/]+/g, " ") : "";
+  const haystack = `${candidate.headline} ${candidate.source_description ?? ""} ${path}`;
   const areas = AREA_KEYWORDS.filter(([, pattern]) => pattern.test(haystack)).map(([area]) => area);
+  if (IBIZA_CONTEXT_PATTERN.test(haystack)) {
+    for (const [area, pattern] of AMBIGUOUS_AREA_KEYWORDS) {
+      if (pattern.test(haystack)) areas.push(area);
+    }
+  }
   if (areas.length > 0) return Array.from(new Set(areas));
 
   const defaults = source.default_area?.filter(Boolean) || [];
@@ -369,7 +383,10 @@ function classifyArea(candidate: RawNewsCandidate, source: NewsSourceConfig): st
 
 function hasLocalIbizaSignal(candidate: RawNewsCandidate): boolean {
   const path = candidate.canonical_url ? new URL(candidate.canonical_url).pathname.replace(/[-_/]+/g, " ") : "";
-  return LOCAL_SIGNAL_PATTERN.test(`${candidate.headline} ${candidate.source_description ?? ""} ${path}`);
+  const haystack = `${candidate.headline} ${candidate.source_description ?? ""} ${path}`;
+  if (LOCAL_SIGNAL_PATTERN.test(haystack)) return true;
+  if (!IBIZA_CONTEXT_PATTERN.test(haystack)) return false;
+  return AMBIGUOUS_AREA_KEYWORDS.some(([, pattern]) => pattern.test(haystack));
 }
 
 function hasExplicitLocalSourceScope(source: NewsSourceConfig): boolean {
