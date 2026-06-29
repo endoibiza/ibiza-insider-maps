@@ -1642,6 +1642,13 @@ const latestSuccessfulSourceAt = (statuses: SourceStatus[]) => {
   return new Date(Math.max(...times)).toISOString();
 };
 
+const missingSchemaFeature = (error: unknown, feature: string) => {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as { code?: string; message?: string; details?: string };
+  const text = `${candidate.message || ""} ${candidate.details || ""}`.toLowerCase();
+  return candidate.code === "42P01" || candidate.code === "42703" || text.includes(feature.toLowerCase());
+};
+
 const mergeReportParts = (parts: Partial<ReportParts>[]) => {
   const merged: ReportParts = { hourly: [], daily: [], alerts: [] };
   for (const part of parts) {
@@ -1843,28 +1850,40 @@ serve(async (req) => {
       reportPreview = reportPayload;
 
       if (request.publish && !request.dry_run) {
-        const { data: report, error: reportError } = await supabase
+        let reportResult = await supabase
           .from("ibiza_weather_daily_reports")
           .upsert(reportPayload, { onConflict: "report_date" })
           .select("id")
           .single();
 
-        if (reportError) throw reportError;
-        reportId = report.id;
+        if (missingSchemaFeature(reportResult.error, "weather_intelligence")) {
+          const { weather_intelligence: _weatherIntelligence, ...legacyReportPayload } = reportPayload;
+          reportResult = await supabase
+            .from("ibiza_weather_daily_reports")
+            .upsert(legacyReportPayload, { onConflict: "report_date" })
+            .select("id")
+            .single();
+        }
+
+        if (reportResult.error) throw reportResult.error;
+        reportId = reportResult.data.id;
 
         const { error: deleteRecommendationsError } = await supabase
           .from("ibiza_beach_recommendations")
           .delete()
           .eq("report_date", request.target_date);
 
-        if (deleteRecommendationsError) throw deleteRecommendationsError;
+        const recommendationsTableMissing = missingSchemaFeature(deleteRecommendationsError, "ibiza_beach_recommendations");
+        if (deleteRecommendationsError && !recommendationsTableMissing) throw deleteRecommendationsError;
 
-        if (beachRecommendations.length > 0) {
+        if (!recommendationsTableMissing && beachRecommendations.length > 0) {
           const { error: recommendationsError } = await supabase
             .from("ibiza_beach_recommendations")
             .insert(beachRecommendations);
 
-          if (recommendationsError) throw recommendationsError;
+          if (recommendationsError && !missingSchemaFeature(recommendationsError, "ibiza_beach_recommendations")) {
+            throw recommendationsError;
+          }
         }
       }
     }
