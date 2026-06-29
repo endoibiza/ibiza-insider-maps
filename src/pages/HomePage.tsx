@@ -24,7 +24,7 @@ import InteractiveMap from "@/components/InteractiveMap";
 import SEOHead from "@/components/SEOHead";
 import { ANALYTICS_EVENTS, track } from "@/lib/analytics";
 
-import benirrasHero from "@/assets/benirras-beach.jpg";
+import calaLlentriscaHero from "@/assets/cala-llentrisca-hero.jpeg";
 
 type MapLink = {
   name: string;
@@ -42,6 +42,14 @@ const HomePage = () => {
   const totalLocations = allLocations.length;
   const { user, hasPremiumAccess, signOut } = useAuth();
   const [showPaywall, setShowPaywall] = useState(false);
+
+  const heroQuickLinks = [
+    { label: "Things To Do", href: "/things-to-do" },
+    { label: "Events", href: "/events" },
+    { label: "Call Taxi", href: "/call-taxi" },
+    { label: "Weather", href: "/weather" },
+    { label: "News", href: "/news" },
+  ];
 
   const openPaywall = (location: string, featureName = "home page") => {
     track(ANALYTICS_EVENTS.paywallCtaClicked, {
@@ -312,10 +320,14 @@ const HomePage = () => {
       {/* Hero Section */}
       <section className="relative min-h-[85vh] flex items-center justify-center overflow-hidden">
         <div 
-          className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: `url(${benirrasHero})` }}
+          className="absolute inset-0 bg-cover"
+          style={{
+            backgroundImage: `url(${calaLlentriscaHero})`,
+            backgroundPosition: "center 44%",
+          }}
         >
           <div className="absolute inset-0 bg-gradient-overlay" />
+          <div className="absolute inset-0 bg-black/25" />
         </div>
         
         <div className="relative z-10 container-safe text-center max-w-5xl py-20">
@@ -330,7 +342,7 @@ const HomePage = () => {
             {hasPremiumAccess ? (
               <>Welcome Back to Your <span className="text-accent">Ibiza Maps</span></>
             ) : (
-              <>The Definitive <span className="text-accent">Insider Map</span><br />for Ibiza</>
+              <>Your <span className="text-accent">Ibiza Maps</span><br />for the Island</>
             )}
           </h1>
           
@@ -338,9 +350,23 @@ const HomePage = () => {
             {hasPremiumAccess ? (
               "Open your curated maps, find the right places faster, and keep the island close while you are here."
             ) : (
-              "Beaches, restaurants, clubs, hotels, shopping, events, and hidden spots - organized into 87+ curated Google Maps with 1,500+ places."
+              "Beaches, restaurants, clubs, taxis, weather, news, events, and hidden spots - organized from the Google Maps lists I send friends when they say, \"I'm coming to Ibiza.\""
             )}
           </p>
+
+          <div className="mb-8 flex flex-wrap items-center justify-center gap-3">
+            {heroQuickLinks.map((item) => (
+              <Button
+                key={item.href}
+                asChild
+                size="lg"
+                variant="outline"
+                className="border-white/70 bg-white/15 text-white hover:bg-white hover:text-primary shadow-xl backdrop-blur-sm"
+              >
+                <Link to={item.href}>{item.label}</Link>
+              </Button>
+            ))}
+          </div>
           
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-10">
             {hasPremiumAccess ? (
