@@ -220,7 +220,7 @@ const intValue = (value: unknown) => {
   return Math.round(numberValue);
 };
 
-const numberValue = (value: unknown) => {
+const finiteNumberValue = (value: unknown) => {
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 };
@@ -1531,7 +1531,7 @@ const slugifyBeachKey = (name: string) =>
     .slice(0, 80);
 
 const scoreToFive = (value: unknown, fallback = 3) => {
-  const numeric = numberValue(value);
+  const numeric = finiteNumberValue(value);
   if (numeric == null) return fallback;
   if (numeric <= 5) return Math.max(1, Math.min(5, Math.round(numeric)));
   return Math.max(1, Math.min(5, Math.round(numeric / 2)));
@@ -1603,8 +1603,8 @@ const beachCatalogRowToProfile = (row: Record<string, unknown>): BeachProfile | 
     beach_name: beachName,
     coast,
     municipality: typeof row.municipality === "string" ? row.municipality : null,
-    latitude: numberValue(row.gps_latitude),
-    longitude: numberValue(row.gps_longitude),
+    latitude: finiteNumberValue(row.gps_latitude),
+    longitude: finiteNumberValue(row.gps_longitude),
     wind_exposure_degrees: directionsToDegrees(exposedDirections, orientation ? [orientation] : []),
     swell_exposure_degrees: directionsToDegrees(swellDirections, exposedDirections),
     shelter_level: shelterLevel,
@@ -1613,7 +1613,7 @@ const beachCatalogRowToProfile = (row: Record<string, unknown>): BeachProfile | 
     sunset_value: sunsetValue,
     sunrise_value: sunriseValue,
     activity_tags: activityTags,
-    wind_speed_limit_kt: numberValue(row.wind_speed_limit_kt),
+    wind_speed_limit_kt: finiteNumberValue(row.wind_speed_limit_kt),
     rain_suitability_score: rainScore,
     walking_score: scoreToFive(row.walking_score, 3),
     snorkeling_score: snorkelingScore,
