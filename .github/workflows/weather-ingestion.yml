@@ -1,9 +1,6 @@
 name: Ibiza Weather Ingestion
 
 on:
-  schedule:
-    - cron: "15 3 * * *"
-    - cron: "30 8,12,16 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
