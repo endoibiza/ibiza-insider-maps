@@ -116,6 +116,60 @@ export interface PublicWeatherAlert extends WeatherAlertSummary {
   attribution_url?: string | null;
 }
 
+export interface WeatherIntelligence {
+  official_status?: {
+    source?: string;
+    checked?: boolean;
+    last_checked_at?: string | null;
+    has_official_alert?: boolean;
+    alert_count?: number;
+    message?: string;
+    alerts?: Array<Record<string, unknown>>;
+  };
+  model_consensus?: {
+    confidence_label?: "high" | "medium" | "low" | string;
+    disagreement_count?: number;
+    summary?: string;
+    commercial_use_note?: string;
+    disagreements?: Array<Record<string, unknown>>;
+  };
+  local_watch_items?: Array<{
+    type?: string;
+    priority?: "high" | "medium" | "low" | string;
+    label?: string;
+    detail?: string;
+    source?: string;
+  }>;
+  data_gaps?: string[];
+  daily_decision_summary?: string;
+  confidence_score?: number;
+  confidence_label?: "high" | "medium" | "low" | string;
+  generated_at?: string;
+  inputs?: Record<string, unknown>;
+}
+
+export interface BeachRecommendation {
+  id: string;
+  report_date: string;
+  beach_key: string;
+  beach_name: string;
+  coast: string;
+  municipality?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  activity_tags?: string[] | null;
+  time_window: "best_now" | "best_afternoon" | "good_alternative" | "avoid_exposed";
+  rank: number;
+  score: number;
+  status: "great" | "good" | "caution" | "avoid";
+  decision: string;
+  reasons: string[];
+  cautions: string[];
+  source_timestamps?: Record<string, string | null>;
+  generated_at: string;
+  lifeguard_caveat?: string | null;
+}
+
 export interface PublicWeatherReport {
   id: string;
   report_date: string;
@@ -130,6 +184,7 @@ export interface PublicWeatherReport {
   alerts_summary: WeatherAlertSummary[];
   source_status: WeatherSourceStatus[];
   source_disagreements: Array<Record<string, unknown>>;
+  weather_intelligence?: WeatherIntelligence;
   attribution: WeatherAttribution[];
   stale_flags: Array<Record<string, unknown>>;
   sources_checked: string[];
@@ -141,6 +196,7 @@ export interface PublicWeatherReport {
 export interface WeatherPayload {
   report: PublicWeatherReport | null;
   alerts: PublicWeatherAlert[];
+  beachRecommendations: BeachRecommendation[];
 }
 
 export const todayMadrid = () =>
@@ -205,6 +261,19 @@ export const sourceStatusClasses = (status: WeatherSourceStatus["status"]) => {
 export const beachStatusClasses = (status: BeachCondition["status"]) => {
   if (status === "good") return "border-emerald-200 bg-emerald-50 text-emerald-800";
   if (status === "caution") return "border-amber-200 bg-amber-50 text-amber-800";
+  return "border-red-200 bg-red-50 text-red-800";
+};
+
+export const recommendationStatusClasses = (status: BeachRecommendation["status"]) => {
+  if (status === "great") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (status === "good") return "border-sky-200 bg-sky-50 text-sky-800";
+  if (status === "caution") return "border-amber-200 bg-amber-50 text-amber-800";
+  return "border-red-200 bg-red-50 text-red-800";
+};
+
+export const confidenceClasses = (confidence?: string | null) => {
+  if (confidence === "high") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (confidence === "medium") return "border-amber-200 bg-amber-50 text-amber-800";
   return "border-red-200 bg-red-50 text-red-800";
 };
 

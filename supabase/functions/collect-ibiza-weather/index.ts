@@ -106,6 +106,41 @@ type ReportParts = {
   alerts: WeatherAlert[];
 };
 
+type BeachProfile = {
+  id?: string | null;
+  beach_key: string;
+  beach_name: string;
+  coast: "North coast" | "East coast" | "South coast" | "West coast";
+  municipality?: string | null;
+  wind_exposure_degrees: number[];
+  swell_exposure_degrees: number[];
+  shelter_level: number;
+  swim_suitability: number;
+  family_suitability: number;
+  sunset_value: number;
+  sunrise_value: number;
+  activity_tags: string[];
+  lifeguard_caveat?: string;
+};
+
+type BeachRecommendation = {
+  run_id: string;
+  report_date: string;
+  beach_profile_id?: string | null;
+  beach_key: string;
+  beach_name: string;
+  coast: string;
+  time_window: "best_now" | "best_afternoon" | "good_alternative" | "avoid_exposed";
+  rank: number;
+  score: number;
+  status: "great" | "good" | "caution" | "avoid";
+  decision: string;
+  reasons: string[];
+  cautions: string[];
+  source_timestamps: Record<string, string | null>;
+  generated_at: string;
+};
+
 type SupabaseClient = ReturnType<typeof createClient>;
 
 const getRequiredEnv = (name: string) => {
@@ -1218,6 +1253,367 @@ const buildDisagreements = (points: ForecastPoint[]) => {
   return disagreements;
 };
 
+const directionMatches = (degrees: number | null, targets: number[], tolerance = 35) => {
+  if (degrees === null) return false;
+  return targets.some((target) => Math.abs(((degrees - target + 540) % 360) - 180) <= tolerance);
+};
+
+const madridHour = (value?: string | null) => {
+  if (!value) return null;
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: IBIZA.timezone,
+    hour: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(value));
+  const hour = Number(parts.find((part) => part.type === "hour")?.value);
+  return Number.isFinite(hour) ? hour : null;
+};
+
+const timeRangeLabel = (items: Record<string, unknown>[]) => {
+  const times = items
+    .map((item) => madridHour(String(item.forecast_time || item.time || "")))
+    .filter((hour): hour is number => typeof hour === "number");
+  if (!times.length) return "today";
+  const start = Math.min(...times);
+  const end = Math.max(...times);
+  if (start === end) return `${String(start).padStart(2, "0")}:00`;
+  return `${String(start).padStart(2, "0")}:00-${String(end).padStart(2, "0")}:00`;
+};
+
+const buildWeatherIntelligence = (
+  current: Record<string, unknown>,
+  marine: Record<string, unknown> | undefined,
+  alerts: WeatherAlert[],
+  daily: Record<string, unknown>[],
+  hourly: Record<string, unknown>[],
+  sourceStatuses: SourceStatus[],
+  disagreements: Array<Record<string, unknown>>,
+  staleFlags: Array<Record<string, unknown>>,
+) => {
+  const officialAlerts = alerts.filter((alert) => alert.official);
+  const aemetStatuses = sourceStatuses.filter((status) => status.source_key.startsWith("aemet-"));
+  const aemetChecked = aemetStatuses.some((status) => status.status === "success");
+  const latestAemetCheck = aemetStatuses
+    .map((status) => new Date(status.fetched_at).getTime())
+    .filter((value) => Number.isFinite(value))
+    .sort((a, b) => b - a)[0];
+
+  const rainHours = hourly.filter((hour) => (intValue(hour.precipitation_probability_pct) ?? 0) >= 50);
+  const thunderHours = hourly.filter((hour) => [95, 96, 99].includes(intValue(hour.weather_code) ?? -1));
+  const uv = round(daily[0]?.uv_index) ?? 0;
+  const gust = round(current.wind_gust_kmh) ?? round(current.wind_speed_kmh) ?? 0;
+  const windDirection = intValue(current.wind_direction_deg);
+  const waveHeight = round(marine?.wave_height_m) ?? 0;
+  const waveDirection = intValue(marine?.wave_direction_deg);
+
+  const localWatchItems: Array<Record<string, unknown>> = [];
+  if (officialAlerts.length > 0) {
+    localWatchItems.push({
+      type: "official_alert",
+      priority: "high",
+      label: "Official AEMET alert active",
+      detail: officialAlerts[0].title,
+      source: "AEMET OpenData",
+    });
+  }
+  if (rainHours.length > 0) {
+    localWatchItems.push({
+      type: "rain_window",
+      priority: "medium",
+      label: "Rain window to watch",
+      detail: `Model rain probability is elevated around ${timeRangeLabel(rainHours)}.`,
+      source: "stored hourly forecast",
+    });
+  }
+  if (thunderHours.length > 0) {
+    localWatchItems.push({
+      type: "thunder_risk",
+      priority: "high",
+      label: "Thunderstorm signal",
+      detail: `Hourly forecast codes indicate possible thunderstorms around ${timeRangeLabel(thunderHours)}.`,
+      source: "stored hourly forecast",
+    });
+  }
+  if (gust >= 40) {
+    localWatchItems.push({
+      type: "wind_gusts",
+      priority: "medium",
+      label: "Gusty exposed spots",
+      detail: `Gusts near ${gust} km/h can make exposed roads and beaches feel rougher.`,
+      source: String(current.source_label || "stored weather source"),
+    });
+  }
+  if (waveHeight >= 1.2) {
+    localWatchItems.push({
+      type: "sea_state",
+      priority: waveHeight >= 1.6 ? "high" : "medium",
+      label: "Exposed coast chop",
+      detail: `Waves near ${waveHeight} m from ${windDirectionLabel(waveDirection)} can affect exposed coves.`,
+      source: String(marine?.source_label || "stored marine source"),
+    });
+  }
+  if (uv >= 8) {
+    localWatchItems.push({
+      type: "uv",
+      priority: "medium",
+      label: "High UV",
+      detail: `UV index around ${uv}; plan shade and avoid the harshest midday sun.`,
+      source: "stored daily forecast",
+    });
+  }
+
+  const confidenceDeductions = [
+    aemetChecked ? 0 : 30,
+    sourceStatuses.some((status) => status.status === "failed") ? 15 : 0,
+    sourceStatuses.some((status) => status.status === "blocked") ? 10 : 0,
+    disagreements.length ? 20 : 0,
+    staleFlags.length ? 15 : 0,
+    marine ? 0 : 10,
+  ];
+  const confidenceScore = Math.max(0, 100 - confidenceDeductions.reduce((sum, value) => sum + value, 0));
+  const confidenceLabel = confidenceScore >= 80 ? "high" : confidenceScore >= 55 ? "medium" : "low";
+
+  const mainConstraint = officialAlerts.length
+    ? "official AEMET alert"
+    : rainHours.length
+      ? "rain window"
+      : gust >= 40
+        ? "gusts"
+        : waveHeight >= 1.2
+          ? "exposed coast chop"
+          : uv >= 8
+            ? "high UV"
+            : "settled conditions";
+
+  const dailyDecisionSummary = mainConstraint === "settled conditions"
+    ? "AEMET and stored weather sources point to a usable Ibiza day; choose beaches by wind exposure, use local flags, and keep source timestamps in view."
+    : `Today's main decision factor is ${mainConstraint}. Ibiza Maps keeps official AEMET status separate from model/free-source signals and ranks beaches by exposure.`;
+
+  return {
+    official_status: {
+      source: "AEMET OpenData",
+      checked: aemetChecked,
+      last_checked_at: latestAemetCheck ? new Date(latestAemetCheck).toISOString() : null,
+      has_official_alert: officialAlerts.length > 0,
+      alert_count: officialAlerts.length,
+      alerts: officialAlerts.map((alert) => ({
+        title: alert.title,
+        severity: alert.severity,
+        event: alert.event,
+        zone: alert.zone,
+        onset_at: alert.onset_at,
+        expires_at: alert.expires_at,
+      })),
+      message: officialAlerts.length
+        ? "Official AEMET alert stored for Ibiza/Formentera."
+        : aemetChecked
+          ? "AEMET official alert source checked; no Ibiza/Formentera alert is stored for this report."
+          : "AEMET official status is not available for this report.",
+    },
+    model_consensus: {
+      confidence_label: confidenceLabel,
+      disagreement_count: disagreements.length,
+      disagreements,
+      summary: disagreements.length
+        ? "Stored sources disagree on at least one key metric; visitor guidance is conservative."
+        : "Stored sources do not show a major disagreement on today's key public metrics.",
+      commercial_use_note: "Open-Meteo-derived values are treated as fallback/cross-check data until commercial terms are approved.",
+    },
+    local_watch_items: localWatchItems,
+    data_gaps: [
+      "Dust, brown-rain, fire-risk, fuel-moisture, and beach-flag feeds are not configured as compliant automated sources yet.",
+    ],
+    daily_decision_summary: dailyDecisionSummary,
+    confidence_score: confidenceScore,
+    confidence_label: confidenceLabel,
+    generated_at: new Date().toISOString(),
+    inputs: {
+      wind_direction_deg: windDirection,
+      wind_direction_label: windDirectionLabel(windDirection),
+      gust_kmh: gust,
+      wave_height_m: waveHeight,
+      wave_direction_label: windDirectionLabel(waveDirection),
+      uv_index: uv,
+      rain_window: rainHours.length ? timeRangeLabel(rainHours) : null,
+    },
+  };
+};
+
+const fallbackBeachProfiles: BeachProfile[] = [
+  { beach_key: "portinatx", beach_name: "Portinatx", coast: "North coast", wind_exposure_degrees: [315, 0, 45], swell_exposure_degrees: [315, 0, 45], shelter_level: 3, swim_suitability: 4, family_suitability: 4, sunset_value: 2, sunrise_value: 3, activity_tags: ["swim", "family", "snorkel"] },
+  { beach_key: "cala_xarraca", beach_name: "Cala Xarraca", coast: "North coast", wind_exposure_degrees: [315, 0, 45], swell_exposure_degrees: [315, 0, 45], shelter_level: 3, swim_suitability: 4, family_suitability: 2, sunset_value: 2, sunrise_value: 3, activity_tags: ["swim", "snorkel"] },
+  { beach_key: "benirras", beach_name: "Benirras", coast: "North coast", wind_exposure_degrees: [315, 0, 45], swell_exposure_degrees: [315, 0, 45], shelter_level: 2, swim_suitability: 3, family_suitability: 3, sunset_value: 4, sunrise_value: 2, activity_tags: ["sunset", "swim"] },
+  { beach_key: "aigues_blanques", beach_name: "Aigues Blanques", coast: "East coast", wind_exposure_degrees: [45, 90, 135], swell_exposure_degrees: [45, 90, 135], shelter_level: 2, swim_suitability: 3, family_suitability: 2, sunset_value: 1, sunrise_value: 5, activity_tags: ["sunrise", "swim"] },
+  { beach_key: "cala_nova", beach_name: "Cala Nova", coast: "East coast", wind_exposure_degrees: [45, 90, 135], swell_exposure_degrees: [45, 90, 135], shelter_level: 2, swim_suitability: 3, family_suitability: 4, sunset_value: 1, sunrise_value: 4, activity_tags: ["swim", "family"] },
+  { beach_key: "santa_eularia", beach_name: "Santa Eularia Beach", coast: "East coast", wind_exposure_degrees: [45, 90, 135], swell_exposure_degrees: [45, 90, 135], shelter_level: 4, swim_suitability: 4, family_suitability: 5, sunset_value: 1, sunrise_value: 3, activity_tags: ["swim", "family", "accessible"] },
+  { beach_key: "cala_llonga", beach_name: "Cala Llonga", coast: "East coast", wind_exposure_degrees: [90, 135], swell_exposure_degrees: [90, 135], shelter_level: 4, swim_suitability: 4, family_suitability: 5, sunset_value: 1, sunrise_value: 3, activity_tags: ["swim", "family"] },
+  { beach_key: "playa_den_bossa", beach_name: "Playa d'en Bossa", coast: "South coast", wind_exposure_degrees: [135, 180, 225], swell_exposure_degrees: [135, 180, 225], shelter_level: 2, swim_suitability: 3, family_suitability: 4, sunset_value: 1, sunrise_value: 2, activity_tags: ["swim", "family", "long_walk"] },
+  { beach_key: "ses_salines", beach_name: "Ses Salines", coast: "South coast", wind_exposure_degrees: [135, 180, 225], swell_exposure_degrees: [135, 180, 225], shelter_level: 2, swim_suitability: 3, family_suitability: 3, sunset_value: 2, sunrise_value: 2, activity_tags: ["swim", "scene"] },
+  { beach_key: "es_cavallet", beach_name: "Es Cavallet", coast: "South coast", wind_exposure_degrees: [135, 180, 225], swell_exposure_degrees: [135, 180, 225], shelter_level: 1, swim_suitability: 2, family_suitability: 2, sunset_value: 2, sunrise_value: 2, activity_tags: ["walk", "scene"] },
+  { beach_key: "cala_jondal", beach_name: "Cala Jondal", coast: "South coast", wind_exposure_degrees: [135, 180, 225], swell_exposure_degrees: [135, 180, 225], shelter_level: 3, swim_suitability: 3, family_suitability: 2, sunset_value: 2, sunrise_value: 1, activity_tags: ["lunch", "swim"] },
+  { beach_key: "cala_tarida", beach_name: "Cala Tarida", coast: "West coast", wind_exposure_degrees: [225, 270, 315], swell_exposure_degrees: [225, 270, 315], shelter_level: 3, swim_suitability: 4, family_suitability: 4, sunset_value: 5, sunrise_value: 1, activity_tags: ["sunset", "swim", "family"] },
+  { beach_key: "cala_comte", beach_name: "Cala Comte", coast: "West coast", wind_exposure_degrees: [225, 270, 315], swell_exposure_degrees: [225, 270, 315], shelter_level: 2, swim_suitability: 3, family_suitability: 3, sunset_value: 5, sunrise_value: 1, activity_tags: ["sunset", "swim", "snorkel"] },
+  { beach_key: "cala_bassa", beach_name: "Cala Bassa", coast: "West coast", wind_exposure_degrees: [225, 270, 315], swell_exposure_degrees: [225, 270, 315], shelter_level: 4, swim_suitability: 4, family_suitability: 4, sunset_value: 4, sunrise_value: 1, activity_tags: ["sunset", "swim", "family"] },
+  { beach_key: "cala_salada", beach_name: "Cala Salada", coast: "West coast", wind_exposure_degrees: [225, 270, 315], swell_exposure_degrees: [225, 270, 315], shelter_level: 4, swim_suitability: 4, family_suitability: 3, sunset_value: 4, sunrise_value: 1, activity_tags: ["sunset", "swim", "snorkel"] },
+  { beach_key: "san_antonio_bay", beach_name: "San Antonio Bay", coast: "West coast", wind_exposure_degrees: [225, 270, 315], swell_exposure_degrees: [225, 270, 315], shelter_level: 4, swim_suitability: 4, family_suitability: 5, sunset_value: 4, sunrise_value: 1, activity_tags: ["sunset", "family", "swim"] },
+];
+
+const fetchBeachProfiles = async (supabase: SupabaseClient): Promise<BeachProfile[]> => {
+  const { data, error } = await supabase
+    .from("ibiza_beach_profiles")
+    .select("id,beach_key,beach_name,coast,municipality,wind_exposure_degrees,swell_exposure_degrees,shelter_level,swim_suitability,family_suitability,sunset_value,sunrise_value,activity_tags,lifeguard_caveat")
+    .eq("enabled", true);
+
+  if (error) {
+    console.warn("Using fallback beach profiles", error.message);
+    return fallbackBeachProfiles;
+  }
+
+  return ((data || []) as Array<Record<string, unknown>>).map((profile) => ({
+    id: String(profile.id),
+    beach_key: String(profile.beach_key),
+    beach_name: String(profile.beach_name),
+    coast: profile.coast as BeachProfile["coast"],
+    municipality: typeof profile.municipality === "string" ? profile.municipality : null,
+    wind_exposure_degrees: arrayValue<number>(profile.wind_exposure_degrees).map(Number).filter((value) => Number.isFinite(value)),
+    swell_exposure_degrees: arrayValue<number>(profile.swell_exposure_degrees).map(Number).filter((value) => Number.isFinite(value)),
+    shelter_level: intValue(profile.shelter_level) ?? 2,
+    swim_suitability: intValue(profile.swim_suitability) ?? 3,
+    family_suitability: intValue(profile.family_suitability) ?? 3,
+    sunset_value: intValue(profile.sunset_value) ?? 1,
+    sunrise_value: intValue(profile.sunrise_value) ?? 1,
+    activity_tags: arrayValue<string>(profile.activity_tags),
+    lifeguard_caveat: typeof profile.lifeguard_caveat === "string" ? profile.lifeguard_caveat : undefined,
+  }));
+};
+
+const scoreBeachProfile = (
+  profile: BeachProfile,
+  current: Record<string, unknown>,
+  marine: Record<string, unknown> | undefined,
+  alerts: WeatherAlert[],
+  daily: Record<string, unknown>[],
+  timeWindow: BeachRecommendation["time_window"],
+) => {
+  const windDirection = intValue(current.wind_direction_deg);
+  const waveDirection = intValue(marine?.wave_direction_deg);
+  const gust = round(current.wind_gust_kmh) ?? round(current.wind_speed_kmh) ?? 0;
+  const waveHeight = round(marine?.wave_height_m) ?? 0;
+  const rainChance = maxDailyRainChance(daily);
+  const uv = round(daily[0]?.uv_index) ?? 0;
+  const officialAlert = alerts.some((alert) => alert.official);
+  const windExposed = directionMatches(windDirection, profile.wind_exposure_degrees);
+  const swellExposed = directionMatches(waveDirection, profile.swell_exposure_degrees, 45);
+  const reasons: string[] = [];
+  const cautions: string[] = [];
+
+  let score = 58 + profile.shelter_level * 4 + profile.swim_suitability * 3 + profile.family_suitability;
+  if (timeWindow === "best_afternoon") score += profile.sunset_value * 3;
+  if (timeWindow === "good_alternative") score += profile.shelter_level * 2;
+
+  if (officialAlert) {
+    score -= 35;
+    cautions.push("Official AEMET alert active");
+  }
+  if (windExposed && gust >= 25) {
+    score -= gust >= 40 ? 22 : 12;
+    cautions.push(`${windDirectionLabel(windDirection)} wind exposes this beach`);
+  } else if (gust < 25) {
+    reasons.push("lighter wind signal");
+  }
+  if (swellExposed && waveHeight >= 0.8) {
+    score -= waveHeight >= 1.4 ? 24 : 12;
+    cautions.push(`${windDirectionLabel(waveDirection)} wave direction can reach this coast`);
+  } else if (waveHeight < 0.8) {
+    reasons.push("lower wave signal");
+  }
+  if (rainChance >= 60) {
+    score -= 16;
+    cautions.push("rain window likely");
+  }
+  if (uv >= 8) {
+    score -= 4;
+    cautions.push("high UV; plan shade");
+  }
+  if (profile.shelter_level >= 4) reasons.push("sheltered profile");
+  if (profile.activity_tags.includes("sunset") && timeWindow === "best_afternoon") reasons.push("strong sunset option");
+  if (profile.family_suitability >= 4) reasons.push("family-friendly profile");
+
+  const boundedScore = Math.max(0, Math.min(100, Math.round(score)));
+  const status: BeachRecommendation["status"] = officialAlert && boundedScore < 45
+    ? "avoid"
+    : boundedScore >= 78
+      ? "great"
+      : boundedScore >= 62
+        ? "good"
+        : boundedScore >= 42
+          ? "caution"
+          : "avoid";
+  const decision = status === "great"
+    ? "Top pick if local flags agree"
+    : status === "good"
+      ? "Good option with normal local checks"
+      : status === "caution"
+        ? "Use caution and prefer sheltered areas"
+        : "Avoid exposed water today";
+
+  return {
+    score: boundedScore,
+    status,
+    decision,
+    reasons: reasons.length ? reasons : ["balanced source-backed conditions"],
+    cautions,
+  };
+};
+
+const buildBeachRecommendations = (
+  profiles: BeachProfile[],
+  runId: string,
+  reportDate: string,
+  current: Record<string, unknown>,
+  marine: Record<string, unknown> | undefined,
+  alerts: WeatherAlert[],
+  daily: Record<string, unknown>[],
+  sourceStatuses: SourceStatus[],
+): BeachRecommendation[] => {
+  const generatedAt = new Date().toISOString();
+  const sourceTimestamps = Object.fromEntries(sourceStatuses.map((status) => [status.source_key, status.status === "success" ? status.fetched_at : null]));
+  const recommendationWindows: BeachRecommendation["time_window"][] = ["best_now", "best_afternoon", "good_alternative", "avoid_exposed"];
+  const rows: BeachRecommendation[] = [];
+
+  for (const window of recommendationWindows) {
+    const scored = profiles
+      .map((profile) => ({ profile, ...scoreBeachProfile(profile, current, marine, alerts, daily, window) }))
+      .sort((a, b) => (window === "avoid_exposed" ? a.score - b.score : b.score - a.score));
+
+    const selected = window === "avoid_exposed"
+      ? scored.filter((item) => item.status === "avoid" || item.status === "caution").slice(0, 4)
+      : scored.filter((item) => item.status !== "avoid").slice(0, window === "good_alternative" ? 4 : 6);
+
+    selected.forEach((item, index) => {
+      rows.push({
+        run_id: runId,
+        report_date: reportDate,
+        beach_profile_id: item.profile.id ?? null,
+        beach_key: item.profile.beach_key,
+        beach_name: item.profile.beach_name,
+        coast: item.profile.coast,
+        time_window: window,
+        rank: index + 1,
+        score: item.score,
+        status: window === "avoid_exposed" && item.status !== "avoid" ? "caution" : item.status,
+        decision: window === "avoid_exposed" ? "More exposed today; choose a calmer alternative" : item.decision,
+        reasons: item.reasons,
+        cautions: item.cautions,
+        source_timestamps: sourceTimestamps,
+        generated_at: generatedAt,
+      });
+    });
+  }
+
+  return rows;
+};
+
 const uniqueAttribution = (statuses: SourceStatus[]) => {
   const seen = new Set<string>();
   return statuses
@@ -1389,6 +1785,27 @@ serve(async (req) => {
       const summary = buildSummary(current, merged.marine, merged.daily);
       const beachConditions = buildBeachConditions(current, merged.marine, alerts, merged.daily);
       const disagreements = buildDisagreements(points);
+      const weatherIntelligence = buildWeatherIntelligence(
+        current,
+        merged.marine,
+        alerts,
+        merged.daily,
+        merged.hourly,
+        sourceStatuses,
+        disagreements,
+        staleFlags,
+      );
+      const beachProfiles = await fetchBeachProfiles(supabase);
+      const beachRecommendations = buildBeachRecommendations(
+        beachProfiles,
+        runId,
+        request.target_date,
+        current,
+        merged.marine,
+        alerts,
+        merged.daily,
+        sourceStatuses,
+      );
       const alertsSummary = alerts.map((alert) => ({
         title: alert.title,
         severity: alert.severity,
@@ -1415,6 +1832,7 @@ serve(async (req) => {
         alerts_summary: alertsSummary,
         source_status: sourceStatuses,
         source_disagreements: disagreements,
+        weather_intelligence: weatherIntelligence,
         attribution: uniqueAttribution(sourceStatuses),
         stale_flags: staleFlags,
         sources_checked: sourceStatuses.map((status) => status.source_key),
@@ -1433,6 +1851,21 @@ serve(async (req) => {
 
         if (reportError) throw reportError;
         reportId = report.id;
+
+        const { error: deleteRecommendationsError } = await supabase
+          .from("ibiza_beach_recommendations")
+          .delete()
+          .eq("report_date", request.target_date);
+
+        if (deleteRecommendationsError) throw deleteRecommendationsError;
+
+        if (beachRecommendations.length > 0) {
+          const { error: recommendationsError } = await supabase
+            .from("ibiza_beach_recommendations")
+            .insert(beachRecommendations);
+
+          if (recommendationsError) throw recommendationsError;
+        }
       }
     }
 

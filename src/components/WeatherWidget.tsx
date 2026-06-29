@@ -34,7 +34,9 @@ import { ANALYTICS_EVENTS, getSafeErrorType, track } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 import {
   alertSeverityClasses,
+  BeachRecommendation,
   beachStatusClasses,
+  confidenceClasses,
   formatMadridDate,
   formatMadridTime,
   formatNumber,
@@ -42,6 +44,7 @@ import {
   formatWind,
   PublicWeatherAlert,
   PublicWeatherReport,
+  recommendationStatusClasses,
   reportIsStale,
   sourceHealthSummary,
   sourceStatusClasses,
@@ -74,17 +77,22 @@ type ActivityCondition = {
 
 const asArray = <T,>(value: T[] | null | undefined): T[] => (Array.isArray(value) ? value : []);
 
-const weatherSelect =
+const baseWeatherSelect =
   "id,report_date,title,headline,summary,current_conditions,hourly_forecast,daily_forecast,marine_summary,beach_conditions,alerts_summary,source_status,source_disagreements,attribution,stale_flags,sources_checked,generated_at,last_successful_source_at,updated_at";
+
+const weatherSelect = baseWeatherSelect.replace("source_disagreements,", "source_disagreements,weather_intelligence,");
 
 const fetchWeatherPayload = async (): Promise<WeatherPayload> => {
   const client = supabase as unknown as PublicReadClient;
 
-  const reportRequest = client
-    .from<PublicWeatherReport>("ibiza_weather_public_current")
-    .select(weatherSelect)
-    .order("report_date", { ascending: false })
-    .limit(1);
+  const buildReportRequest = (columns: string) =>
+    client
+      .from<PublicWeatherReport>("ibiza_weather_public_current")
+      .select(columns)
+      .order("report_date", { ascending: false })
+      .limit(1);
+
+  const reportRequest = buildReportRequest(weatherSelect);
 
   const alertsRequest = client
     .from<PublicWeatherAlert>("ibiza_weather_alerts_public")
@@ -92,13 +100,37 @@ const fetchWeatherPayload = async (): Promise<WeatherPayload> => {
     .order("report_date", { ascending: false })
     .limit(12);
 
-  const [reportResponse, alertsResponse] = await Promise.all([reportRequest, alertsRequest]);
+  const recommendationsRequest = client
+    .from<BeachRecommendation>("ibiza_beach_recommendations_public")
+    .select("*")
+    .order("report_date", { ascending: false })
+    .order("time_window", { ascending: true })
+    .order("rank", { ascending: true })
+    .limit(32);
+
+  const [initialReportResponse, alertsResponse, recommendationsResponse] = await Promise.all([
+    reportRequest,
+    alertsRequest,
+    recommendationsRequest,
+  ]);
+  let reportResponse = initialReportResponse;
+  if (reportResponse.error?.message?.includes("weather_intelligence")) {
+    reportResponse = await buildReportRequest(baseWeatherSelect);
+  }
   if (reportResponse.error) throw new Error(reportResponse.error.message);
 
   const report = reportResponse.data?.[0] ?? null;
   const alerts = asArray(alertsResponse.error ? [] : alertsResponse.data).filter(
     (alert) => !report || alert.report_date === report.report_date,
   );
+  const beachRecommendations = asArray(recommendationsResponse.error ? [] : recommendationsResponse.data)
+    .filter((recommendation) => !report || recommendation.report_date === report.report_date)
+    .map((recommendation) => ({
+      ...recommendation,
+      reasons: asArray(recommendation.reasons),
+      cautions: asArray(recommendation.cautions),
+      activity_tags: asArray(recommendation.activity_tags),
+    }));
 
   return {
     report: report
@@ -116,6 +148,7 @@ const fetchWeatherPayload = async (): Promise<WeatherPayload> => {
         }
       : null,
     alerts,
+    beachRecommendations,
   };
 };
 
@@ -186,6 +219,12 @@ const buildActivityConditions = (report: PublicWeatherReport | null, alerts: Arr
       status: gust >= 35 || rainChance >= 60 ? "caution" : "good",
       detail: gust >= 35 ? "Wind exposed roads" : rainChance >= 60 ? "Rain risk" : "Decent riding conditions",
     },
+    {
+      label: "Sunset",
+      icon: Sunset,
+      status: officialAlert || rainChance >= 70 ? "caution" : "good",
+      detail: officialAlert ? "Check alert timing" : rainChance >= 70 ? "Cloud or rain risk" : "Watch west coast light",
+    },
   ];
 };
 
@@ -236,6 +275,13 @@ const WeatherWidget = ({ autoLoad = true }: WeatherWidgetProps) => {
   const latestSourceAt = latestStatusTime(report?.source_status ?? []);
   const officialAlerts = alerts.filter((alert) => alert.official);
   const modelAlerts = alerts.filter((alert) => !alert.official);
+  const intelligence = report?.weather_intelligence ?? {};
+  const officialStatus = intelligence.official_status;
+  const modelConsensus = intelligence.model_consensus;
+  const localWatchItems = intelligence.local_watch_items ?? [];
+  const bestNow = (data?.beachRecommendations ?? []).filter((recommendation) => recommendation.time_window === "best_now").slice(0, 4);
+  const bestAfternoon = (data?.beachRecommendations ?? []).filter((recommendation) => recommendation.time_window === "best_afternoon").slice(0, 4);
+  const avoidExposed = (data?.beachRecommendations ?? []).filter((recommendation) => recommendation.time_window === "avoid_exposed").slice(0, 3);
 
   useEffect(() => {
     if (!error) return;
@@ -323,7 +369,12 @@ const WeatherWidget = ({ autoLoad = true }: WeatherWidgetProps) => {
             </div>
 
             <h2 className="text-3xl font-bold leading-tight text-foreground md:text-4xl">{report.headline}</h2>
-            <p className="mt-4 max-w-3xl text-base leading-7 text-muted-foreground">{report.summary}</p>
+            <p className="mt-4 max-w-3xl text-base leading-7 text-muted-foreground">
+              {intelligence.daily_decision_summary || report.summary}
+            </p>
+            {intelligence.daily_decision_summary && (
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">{report.summary}</p>
+            )}
 
             <div className="mt-5 flex flex-wrap gap-2">
               <Badge variant="outline" className="border-sky-200 bg-white text-sky-900">
@@ -383,7 +434,7 @@ const WeatherWidget = ({ autoLoad = true }: WeatherWidgetProps) => {
         </div>
       </section>
 
-      <section className="grid gap-3 md:grid-cols-5">
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
         {activities.map((item) => {
           const Icon = item.icon;
           return (
@@ -399,6 +450,57 @@ const WeatherWidget = ({ autoLoad = true }: WeatherWidgetProps) => {
             </article>
           );
         })}
+      </section>
+
+      <section className="grid gap-5 lg:grid-cols-[0.95fr_1.05fr]">
+        <div className="border bg-white p-5 shadow-sm">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-primary" />
+              <h3 className="text-lg font-semibold">Official AEMET And Confidence</h3>
+            </div>
+            <Badge variant="outline" className={cn("uppercase tracking-normal", confidenceClasses(intelligence.confidence_label))}>
+              {intelligence.confidence_label || "updating"} confidence
+            </Badge>
+          </div>
+          <div className="space-y-3 text-sm leading-6 text-muted-foreground">
+            <p>{officialStatus?.message || "Official AEMET status is visible when the source check completes."}</p>
+            {officialStatus?.last_checked_at && (
+              <p>AEMET checked {formatMadridTime(officialStatus.last_checked_at)}.</p>
+            )}
+            <p>{modelConsensus?.summary || "Source agreement is assessed after each cloud collection run."}</p>
+            {typeof intelligence.confidence_score === "number" && (
+              <p>Decision confidence score: {Math.round(intelligence.confidence_score)}/100.</p>
+            )}
+          </div>
+        </div>
+
+        <div className="border bg-white p-5 shadow-sm">
+          <div className="mb-4 flex items-center gap-2">
+            <Activity className="h-5 w-5 text-primary" />
+            <h3 className="text-lg font-semibold">Local Watch Items</h3>
+          </div>
+          {localWatchItems.length > 0 ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              {localWatchItems.map((item) => (
+                <article key={`${item.type}-${item.label}`} className="border bg-slate-50 p-4">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <h4 className="font-semibold">{item.label || "Weather signal"}</h4>
+                    <Badge variant="outline" className={cn("border-current text-current", item.priority === "high" ? "text-red-700" : "text-amber-700")}>
+                      {item.priority || "watch"}
+                    </Badge>
+                  </div>
+                  <p className="text-sm leading-6 text-muted-foreground">{item.detail || "Stored source-backed signal."}</p>
+                  {item.source && <p className="mt-2 text-xs text-muted-foreground">Source: {item.source}</p>}
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm leading-6 text-muted-foreground">
+              No special watch item was generated beyond the stored forecast. Check local flags before swimming.
+            </p>
+          )}
+        </div>
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -432,11 +534,88 @@ const WeatherWidget = ({ autoLoad = true }: WeatherWidgetProps) => {
         />
       </section>
 
+      {(bestNow.length > 0 || bestAfternoon.length > 0) && (
+        <section className="border bg-white p-5 shadow-sm">
+          <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-2">
+              <Waves className="h-5 w-5 text-primary" />
+              <h3 className="text-lg font-semibold">Beach Recommendation Engine</h3>
+            </div>
+            <p className="text-sm text-muted-foreground">Ranked by wind exposure, waves, shelter, UV, rain, and official alerts.</p>
+          </div>
+          <div className="grid gap-5 lg:grid-cols-2">
+            <div>
+              <h4 className="mb-3 text-sm font-semibold uppercase tracking-normal text-muted-foreground">Best now</h4>
+              <div className="grid gap-3">
+                {bestNow.map((recommendation) => (
+                  <article key={`now-${recommendation.id}`} className={cn("border p-4", recommendationStatusClasses(recommendation.status))}>
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <div>
+                        <h5 className="font-semibold">{recommendation.rank}. {recommendation.beach_name}</h5>
+                        <p className="text-xs opacity-80">{recommendation.coast}</p>
+                      </div>
+                      <Badge variant="outline" className="border-current text-current">{recommendation.score}</Badge>
+                    </div>
+                    <p className="text-sm font-medium">{recommendation.decision}</p>
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                      {recommendation.reasons.slice(0, 3).map((reason) => (
+                        <span key={reason} className="border border-current/30 bg-white/60 px-2 py-1">{reason}</span>
+                      ))}
+                    </div>
+                    {recommendation.cautions.length > 0 && (
+                      <p className="mt-3 text-xs opacity-85">{recommendation.cautions.slice(0, 2).join("; ")}</p>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <h4 className="mb-3 text-sm font-semibold uppercase tracking-normal text-muted-foreground">Best afternoon / sunset</h4>
+              <div className="grid gap-3">
+                {bestAfternoon.map((recommendation) => (
+                  <article key={`afternoon-${recommendation.id}`} className={cn("border p-4", recommendationStatusClasses(recommendation.status))}>
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <div>
+                        <h5 className="font-semibold">{recommendation.rank}. {recommendation.beach_name}</h5>
+                        <p className="text-xs opacity-80">{recommendation.coast}</p>
+                      </div>
+                      <Badge variant="outline" className="border-current text-current">{recommendation.status}</Badge>
+                    </div>
+                    <p className="text-sm font-medium">{recommendation.decision}</p>
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                      {recommendation.reasons.slice(0, 3).map((reason) => (
+                        <span key={reason} className="border border-current/30 bg-white/60 px-2 py-1">{reason}</span>
+                      ))}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+          </div>
+          {avoidExposed.length > 0 && (
+            <div className="mt-5 border border-amber-200 bg-amber-50 p-4">
+              <h4 className="mb-2 text-sm font-semibold text-amber-900">More exposed today</h4>
+              <div className="flex flex-wrap gap-2 text-sm text-amber-900">
+                {avoidExposed.map((recommendation) => (
+                  <span key={`avoid-${recommendation.id}`} className="border border-amber-300 bg-white/60 px-2 py-1">
+                    {recommendation.beach_name}: {recommendation.cautions[0] || recommendation.decision}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          <p className="mt-4 text-xs leading-5 text-muted-foreground">
+            Recommendations are guidance only. Always follow beach flags, lifeguards, and official alerts.
+          </p>
+        </section>
+      )}
+
       <section className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
         <div className="border bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center gap-2">
             <Waves className="h-5 w-5 text-primary" />
-            <h3 className="text-lg font-semibold">Beach And Coast Conditions</h3>
+            <h3 className="text-lg font-semibold">Beach & Coast Decision</h3>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             {report.beach_conditions.map((condition) => (

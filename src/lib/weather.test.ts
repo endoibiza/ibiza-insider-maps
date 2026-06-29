@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   beachStatusClasses,
+  confidenceClasses,
   formatNumber,
+  recommendationStatusClasses,
   reportIsStale,
   sourceHealthSummary,
   sourceStatusClasses,
@@ -77,5 +79,8 @@ describe("weather helpers", () => {
     expect(sourceStatusClasses("success")).toContain("emerald");
     expect(sourceStatusClasses("failed")).toContain("red");
     expect(beachStatusClasses("caution")).toContain("amber");
+    expect(recommendationStatusClasses("great")).toContain("emerald");
+    expect(recommendationStatusClasses("avoid")).toContain("red");
+    expect(confidenceClasses("medium")).toContain("amber");
   });
 });

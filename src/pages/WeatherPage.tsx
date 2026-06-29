@@ -23,9 +23,9 @@ const WeatherPage = () => {
   return (
     <>
       <SEOHead 
-        title="Ibiza Weather - Source-Backed Forecasts, Sea Conditions & Alerts"
-        description="Cloud-refreshed Ibiza weather, wind, sea state, official AEMET alerts when available, sunrise and sunset, and beach-condition guidance with source timestamps."
-        keywords="Ibiza weather, Ibiza forecast, AEMET Ibiza, beach conditions, wind forecast, wave report, Ibiza sea conditions"
+        title="Ibiza Weather Analyst - AEMET Alerts, Sea Conditions & Beach Picks"
+        description="Cloud-refreshed Ibiza weather intelligence with official AEMET alert status, wind, sea state, UV, sunrise and sunset, source confidence, and beach recommendations."
+        keywords="Ibiza weather, Ibiza forecast, AEMET Ibiza, beach recommendations, wind forecast, wave report, Ibiza sea conditions"
         canonicalPath="/weather"
         structuredData={structuredData}
       />
@@ -62,11 +62,11 @@ const WeatherPage = () => {
           </div>
           
           <h1 className="text-4xl md:text-5xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-            Ibiza Weather For Today
+            Ibiza Weather Analyst
           </h1>
           
           <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
-            Source-backed weather, sea state, wind, UV, official alerts when available, and coast-by-coast beach guidance
+            Source-backed weather, official AEMET alert status, sea state, wind, UV, and ranked beach guidance
             with visible timestamps.
           </p>
 
