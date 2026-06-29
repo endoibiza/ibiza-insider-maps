@@ -14,7 +14,10 @@ const escapeHtml = (value: string) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
-const renderCompatibilityHtml = (stories: Array<Record<string, unknown>>, digest?: Record<string, unknown> | null) => {
+const renderCompatibilityHtml = (
+  stories: Array<Record<string, unknown>>,
+  digest?: Record<string, unknown> | null,
+) => {
   const title = digest?.title ? String(digest.title) : "Ibiza News";
   const items = stories
     .slice(0, 12)
@@ -22,7 +25,9 @@ const renderCompatibilityHtml = (stories: Array<Record<string, unknown>>, digest
       const headline = escapeHtml(String(story.headline || "Untitled story"));
       const summary = escapeHtml(String(story.summary || ""));
       const sourceUrl = String(story.source_url || "");
-      const sourceLink = sourceUrl ? `<a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">Read source</a>` : "";
+      const sourceLink = sourceUrl
+        ? `<a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">Read source</a>`
+        : "";
       return `<article><h3>${headline}</h3><p>${summary}</p>${sourceLink}</article>`;
     })
     .join("");
@@ -36,6 +41,12 @@ serve(async (req) => {
   }
 
   try {
+    try {
+      await req.text();
+    } catch (_) {
+      // Drain body for compatibility with older callers.
+    }
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY");
 
@@ -47,22 +58,23 @@ serve(async (req) => {
     const url = new URL(req.url);
     const limit = Math.min(Number(url.searchParams.get("limit") || 30), 60);
 
-    const [{ data: digests, error: digestError }, { data: stories, error: storiesError }] = await Promise.all([
-      supabase
-        .from("ibiza_news_daily_digests_public")
-        .select("*")
-        .order("digest_date", { ascending: false })
-        .limit(1),
-      supabase
-        .from("ibiza_news_public")
-        .select(
-          "id,notion_page_id,headline,summary,category,area,source_url,date,created_at,updated_at,significance,ibiza_maps_relevant,santa_eularia,source_label,source_domain,digest_section,published_at,legacy_source,display_language,translation_status,primary_area,curation_score",
-        )
-        .order("date", { ascending: false })
-        .order("curation_score", { ascending: false })
-        .order("created_at", { ascending: false })
-        .limit(limit),
-    ]);
+    const [{ data: digests, error: digestError }, { data: stories, error: storiesError }] =
+      await Promise.all([
+        supabase
+          .from("ibiza_news_daily_digests_public")
+          .select("*")
+          .order("digest_date", { ascending: false })
+          .limit(1),
+        supabase
+          .from("ibiza_news_public")
+          .select(
+            "id,notion_page_id,headline,summary,category,area,source_url,date,created_at,updated_at,significance,ibiza_maps_relevant,santa_eularia,source_label,source_domain,digest_section,published_at,legacy_source,display_language,translation_status,primary_area,curation_score",
+          )
+          .order("date", { ascending: false })
+          .order("curation_score", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(limit),
+      ]);
 
     if (digestError) throw digestError;
     if (storiesError) throw storiesError;
@@ -76,15 +88,16 @@ serve(async (req) => {
         stories: publicStories,
         news: renderCompatibilityHtml(publicStories, digest),
         timestamp: new Date().toISOString(),
-        source: "supabase",
+        source: "supabase-public-news",
+        retired_ai_gateway: true,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (error) {
-    console.error("Error in get-news function:", error);
-    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    console.error("Error in get-news compatibility function:", error);
+    return new Response(
+      JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   }
 });
