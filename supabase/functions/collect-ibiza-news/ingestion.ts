@@ -94,6 +94,12 @@ const AMBIGUOUS_AREA_KEYWORDS: Array<[string, RegExp]> = [
   ["Sant Joan", /\bsan juan\b/i],
 ];
 
+function removePublisherBoilerplate(value: string): string {
+  return value
+    .replace(/\b(la voz de ibiza|diario de ibiza|per[ií]odico de ibiza(?: y formentera)?)\b/gi, " ")
+    .replace(/\b(se public[oó] primero en|published first in|the entry|la entrada)\b/gi, " ");
+}
+
 export function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
@@ -370,7 +376,8 @@ function classifyArea(candidate: RawNewsCandidate, source: NewsSourceConfig): st
   const path = candidate.canonical_url ? new URL(candidate.canonical_url).pathname.replace(/[-_/]+/g, " ") : "";
   const haystack = `${candidate.headline} ${candidate.source_description ?? ""} ${path}`;
   const areas = AREA_KEYWORDS.filter(([, pattern]) => pattern.test(haystack)).map(([area]) => area);
-  if (IBIZA_CONTEXT_PATTERN.test(haystack)) {
+  const localSignalHaystack = removePublisherBoilerplate(haystack);
+  if (IBIZA_CONTEXT_PATTERN.test(localSignalHaystack)) {
     for (const [area, pattern] of AMBIGUOUS_AREA_KEYWORDS) {
       if (pattern.test(haystack)) areas.push(area);
     }
@@ -383,7 +390,7 @@ function classifyArea(candidate: RawNewsCandidate, source: NewsSourceConfig): st
 
 function hasLocalIbizaSignal(candidate: RawNewsCandidate): boolean {
   const path = candidate.canonical_url ? new URL(candidate.canonical_url).pathname.replace(/[-_/]+/g, " ") : "";
-  const haystack = `${candidate.headline} ${candidate.source_description ?? ""} ${path}`;
+  const haystack = removePublisherBoilerplate(`${candidate.headline} ${candidate.source_description ?? ""} ${path}`);
   if (LOCAL_SIGNAL_PATTERN.test(haystack)) return true;
   if (!IBIZA_CONTEXT_PATTERN.test(haystack)) return false;
   return AMBIGUOUS_AREA_KEYWORDS.some(([, pattern]) => pattern.test(haystack));

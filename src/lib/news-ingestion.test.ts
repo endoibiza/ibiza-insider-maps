@@ -199,6 +199,40 @@ describe("Ibiza news ingestion helpers", () => {
     });
   });
 
+  it("does not count publisher boilerplate as Ibiza-local evidence", () => {
+    const raw: RawNewsCandidate = {
+      source_key: "lavoz-general-rss",
+      source_name: "La Voz de Ibiza RSS",
+      source_type: "rss",
+      publish_mode: "auto",
+      source_url: "https://lavozdeibiza.com/feed/",
+      canonical_url:
+        "https://lavozdeibiza.com/sociedad/hallazgo-macabro-en-california-encuentran-117-perros-muertos-en-un-refugio-sin-sacrificio",
+      headline: "Hallazgo macabro en California: encuentran 117 perros muertos en un refugio sin sacrificio",
+      source_description:
+        "La investigación comenzó tras varias denuncias. La entrada Hallazgo macabro en California se publicó primero en La Voz De Ibiza.",
+      published_at: "2026-06-29T08:00:00.000Z",
+      language: "es",
+      raw_metadata: {},
+    };
+
+    const classified = classifyCandidate(raw, {
+      source_key: "lavoz-general-rss",
+      source_name: "La Voz de Ibiza RSS",
+      source_type: "rss",
+      source_url: "https://lavozdeibiza.com/feed/",
+      default_language: "es",
+      publish_mode: "auto",
+      source_scope: "general",
+    });
+
+    expect(classified.ibiza_maps_relevant).toBe(false);
+    expect(shouldPublishCandidate(classified, "2026-06-29")).toEqual({
+      publishable: false,
+      reason: "missing Ibiza-local relevance signal",
+    });
+  });
+
   it("allows ambiguous English municipality names only with explicit Ibiza context", () => {
     const raw: RawNewsCandidate = {
       source_key: "diario-general-rss",
