@@ -220,6 +220,11 @@ const intValue = (value: unknown) => {
   return Math.round(numberValue);
 };
 
+const numberValue = (value: unknown) => {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
 const arrayValue = <T>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
 
 const isoOrNull = (value: unknown) => {
