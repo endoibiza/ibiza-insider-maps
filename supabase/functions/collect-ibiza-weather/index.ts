@@ -1766,17 +1766,27 @@ const scoreBeachProfile = (
         : boundedScore >= 42
           ? "caution"
           : "avoid";
+  const reasonMatching = (pattern: RegExp) => reasons.find((reason) => pattern.test(reason));
   const primaryReason = reasons[0] || "Source-backed conditions look balanced";
+  const decisionReason = timeWindow === "best_family"
+    ? reasonMatching(/family|lifeguard/i) || primaryReason
+    : timeWindow === "best_sunset"
+      ? reasonMatching(/sunset/i) || primaryReason
+      : timeWindow === "best_swim"
+        ? reasonMatching(/water|wave|swim|snorkel/i) || primaryReason
+        : timeWindow === "best_afternoon"
+          ? reasonMatching(/shelter|wave|sunset/i) || primaryReason
+          : primaryReason;
   const decision = status === "great"
     ? timeWindow === "best_swim"
-      ? `Best swim candidate: ${primaryReason}`
+      ? `Best swim candidate: ${decisionReason}`
       : timeWindow === "best_family"
-        ? `Best family pick: ${primaryReason}`
+        ? `Best family pick: ${decisionReason}`
         : timeWindow === "best_sunset"
-          ? `Best sunset pick: ${primaryReason}`
-          : `Top pick today: ${primaryReason}`
+          ? `Best sunset pick: ${decisionReason}`
+          : `Top pick today: ${decisionReason}`
     : status === "good"
-      ? `Good option today: ${primaryReason}`
+      ? `Good option today: ${decisionReason}`
       : status === "caution"
         ? `Use caution: ${cautions[0] || "choose the most sheltered part of the beach"}`
         : `Avoid exposed water: ${cautions[0] || "conditions are not comfortable today"}`;
