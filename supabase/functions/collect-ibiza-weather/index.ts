@@ -1206,9 +1206,9 @@ const buildBeachConditions = (
 
     const status = score >= 5 ? "rough" : score >= 2 ? "caution" : "good";
     const headline = status === "good"
-      ? "Best for an easy swim if local flags agree"
+      ? "Best for an easy swim based on today's wind and wave signal"
       : status === "caution"
-        ? "Check local flags and choose sheltered coves"
+        ? "Choose sheltered coves and check posted lifeguard guidance"
         : "Avoid exposed water and follow official advice";
 
     return {
@@ -1578,6 +1578,11 @@ const lifeguardCaveatForBeach = (row: Record<string, unknown>) => {
   return "No automated lifeguard status is available; check posted flags and local guidance before swimming.";
 };
 
+const positiveNumberOrNull = (value: unknown) => {
+  const parsed = finiteNumberValue(value);
+  return parsed !== null && parsed > 0 ? parsed : null;
+};
+
 const beachCatalogRowToProfile = (row: Record<string, unknown>): BeachProfile | null => {
   const beachName = typeof row.place_name === "string" ? row.place_name.trim() : "";
   if (!beachName) return null;
@@ -1613,7 +1618,7 @@ const beachCatalogRowToProfile = (row: Record<string, unknown>): BeachProfile | 
     sunset_value: sunsetValue,
     sunrise_value: sunriseValue,
     activity_tags: activityTags,
-    wind_speed_limit_kt: finiteNumberValue(row.wind_speed_limit_kt),
+    wind_speed_limit_kt: positiveNumberOrNull(row.wind_speed_limit_kt),
     rain_suitability_score: rainScore,
     walking_score: scoreToFive(row.walking_score, 3),
     snorkeling_score: snorkelingScore,
@@ -1692,6 +1697,8 @@ const scoreBeachProfile = (
   const windExposed = directionMatches(windDirection, profile.wind_exposure_degrees);
   const swellExposed = directionMatches(waveDirection, profile.swell_exposure_degrees, 45);
   const gustKt = Math.round(gust * 0.539957);
+  const windLabel = windDirectionLabel(windDirection);
+  const waveLabel = windDirectionLabel(waveDirection);
   const reasons: string[] = [];
   const cautions: string[] = [];
 
@@ -1708,43 +1715,45 @@ const scoreBeachProfile = (
   }
   if (windExposed && gust >= 25) {
     score -= gust >= 40 ? 22 : 12;
-    cautions.push(`${windDirectionLabel(windDirection)} wind exposes this beach`);
+    cautions.push(`${windLabel} wind reaches this beach more directly`);
   } else if (gust < 25) {
-    reasons.push("lighter wind signal");
+    reasons.push(`Light ${windLabel} wind today`);
+  } else if (profile.shelter_level >= 4) {
+    reasons.push(`Sheltered profile for today's ${windLabel} wind`);
   }
   if (swellExposed && waveHeight >= 0.8) {
     score -= waveHeight >= 1.4 ? 24 : 12;
-    cautions.push(`${windDirectionLabel(waveDirection)} wave direction can reach this coast`);
+    cautions.push(`${waveLabel} wave direction can reach this coast`);
   } else if (waveHeight < 0.8) {
-    reasons.push("lower wave signal");
+    reasons.push(`Low wave signal near ${waveHeight} m`);
   }
   if (profile.wind_speed_limit_kt != null && gustKt > profile.wind_speed_limit_kt) {
     score -= 10;
-    cautions.push(`gusts above this beach profile's comfort limit`);
+    cautions.push(`Gusts above this beach profile's comfort limit`);
   }
   if (rainChance >= 60) {
     score -= 16;
-    cautions.push("rain window likely");
+    cautions.push("Rain window likely");
   } else if ((profile.rain_suitability_score ?? 3) >= 4 && rainChance >= 25) {
     score += 4;
-    reasons.push("better fallback if showers appear");
+    reasons.push("Useful fallback if showers appear");
   }
   if (uv >= 8) {
     score -= 4;
-    cautions.push("high UV; plan shade");
+    cautions.push(`High UV ${uv}; plan shade`);
   }
-  if (profile.shelter_level >= 4) reasons.push("sheltered profile");
-  if (profile.activity_tags.includes("sunset") && (timeWindow === "best_afternoon" || timeWindow === "best_sunset")) reasons.push("strong sunset option");
-  if (profile.family_suitability >= 4 && timeWindow === "best_family") reasons.push("family-friendly profile");
-  if (profile.activity_tags.some((tag) => ["snorkel", "sup", "kayak", "swim"].includes(tag)) && timeWindow === "best_swim") reasons.push("water activity fit");
-  if (profile.facilities?.toLowerCase().includes("lifeguard") && (timeWindow === "best_family" || waveHeight >= 0.6 || gust >= 25)) reasons.push("lifeguard listed in catalog");
+  if (profile.shelter_level >= 4 && !reasons.some((reason) => /shelter/i.test(reason))) reasons.push("Sheltered cove profile");
+  if (profile.activity_tags.includes("sunset") && (timeWindow === "best_afternoon" || timeWindow === "best_sunset")) reasons.push("Strong sunset fit");
+  if (profile.family_suitability >= 4 && timeWindow === "best_family") reasons.push("Family-friendly catalog profile");
+  if (profile.activity_tags.some((tag) => ["snorkel", "sup", "kayak", "swim"].includes(tag)) && timeWindow === "best_swim") reasons.push("Good water-activity fit");
+  if (profile.facilities?.toLowerCase().includes("lifeguard") && (timeWindow === "best_family" || waveHeight >= 0.6 || gust >= 25)) reasons.push("Lifeguard listed in catalog");
   if (timeWindow === "best_family" && /difficult|hard|steep|cliff|walk/i.test(profile.access_difficulty || "")) {
     score -= 10;
-    cautions.push("access may be harder for families");
+    cautions.push("Access may be harder for families");
   }
   if (timeWindow === "best_swim" && (waveHeight >= 1.0 || gust >= 30)) {
     score -= 10;
-    cautions.push("water may be less comfortable for casual swimming");
+    cautions.push("Water may be less comfortable for casual swimming");
   }
 
   const boundedScore = Math.max(0, Math.min(100, Math.round(score)));
@@ -1757,25 +1766,26 @@ const scoreBeachProfile = (
         : boundedScore >= 42
           ? "caution"
           : "avoid";
+  const primaryReason = reasons[0] || "Source-backed conditions look balanced";
   const decision = status === "great"
     ? timeWindow === "best_swim"
-      ? "Best swim candidate if local flags agree"
+      ? `Best swim candidate: ${primaryReason}`
       : timeWindow === "best_family"
-        ? "Best family-friendly candidate if local flags agree"
+        ? `Best family pick: ${primaryReason}`
         : timeWindow === "best_sunset"
-          ? "Best sunset candidate if local conditions hold"
-          : "Top pick if local flags agree"
+          ? `Best sunset pick: ${primaryReason}`
+          : `Top pick today: ${primaryReason}`
     : status === "good"
-      ? "Good option with normal local checks"
+      ? `Good option today: ${primaryReason}`
       : status === "caution"
-        ? "Use caution and prefer sheltered areas"
-        : "Avoid exposed water today";
+        ? `Use caution: ${cautions[0] || "choose the most sheltered part of the beach"}`
+        : `Avoid exposed water: ${cautions[0] || "conditions are not comfortable today"}`;
 
   return {
     score: boundedScore,
     status,
     decision,
-    reasons: reasons.length ? reasons : ["balanced source-backed conditions"],
+    reasons: reasons.length ? reasons : ["Source-backed conditions look balanced"],
     cautions,
   };
 };
@@ -1802,6 +1812,7 @@ const buildBeachRecommendations = (
     "avoid_exposed",
   ];
   const rows: BeachRecommendation[] = [];
+  const selectedBeachUsage = new Map<string, number>();
   const windowLimits: Record<BeachRecommendation["time_window"], number> = {
     best_now: 6,
     best_swim: 4,
@@ -1814,14 +1825,29 @@ const buildBeachRecommendations = (
 
   for (const window of recommendationWindows) {
     const scored = profiles
-      .map((profile) => ({ profile, ...scoreBeachProfile(profile, current, marine, alerts, daily, window) }))
-      .sort((a, b) => (window === "avoid_exposed" ? a.score - b.score : b.score - a.score));
+      .map((profile) => {
+        const scoredProfile = scoreBeachProfile(profile, current, marine, alerts, daily, window);
+        const usage = selectedBeachUsage.get(profile.beach_key) ?? 0;
+        const diversityPenalty = window === "avoid_exposed" ? 0 : usage * 9;
+        return {
+          profile,
+          ...scoredProfile,
+          adjustedScore: Math.max(0, scoredProfile.score - diversityPenalty),
+        };
+      })
+      .sort((a, b) => (window === "avoid_exposed" ? a.adjustedScore - b.adjustedScore : b.adjustedScore - a.adjustedScore));
 
     const selected = window === "avoid_exposed"
       ? scored.filter((item) => item.status === "avoid" || item.status === "caution").slice(0, windowLimits[window])
-      : scored.filter((item) => item.status !== "avoid").slice(0, windowLimits[window]);
+      : scored
+        .filter((item) => item.status !== "avoid")
+        .sort((a, b) => b.adjustedScore - a.adjustedScore)
+        .slice(0, windowLimits[window]);
 
     selected.forEach((item, index) => {
+      if (window !== "avoid_exposed") {
+        selectedBeachUsage.set(item.profile.beach_key, (selectedBeachUsage.get(item.profile.beach_key) ?? 0) + 1);
+      }
       rows.push({
         run_id: runId,
         report_date: reportDate,
