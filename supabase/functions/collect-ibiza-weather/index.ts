@@ -1771,11 +1771,13 @@ const scoreBeachProfile = (
   const decisionReason = timeWindow === "best_family"
     ? reasonMatching(/family|lifeguard/i) || primaryReason
     : timeWindow === "best_sunset"
-      ? reasonMatching(/sunset/i) || primaryReason
+      ? reasonMatching(/sunset|shelter|wave/i) || primaryReason
       : timeWindow === "best_swim"
         ? reasonMatching(/water|wave|swim|snorkel/i) || primaryReason
         : timeWindow === "best_afternoon"
           ? reasonMatching(/shelter|wave|sunset/i) || primaryReason
+          : timeWindow === "best_now"
+            ? reasonMatching(/wave|shelter/i) || primaryReason
           : primaryReason;
   const decision = status === "great"
     ? timeWindow === "best_swim"
