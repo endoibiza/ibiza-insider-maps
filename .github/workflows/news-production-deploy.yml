@@ -44,6 +44,7 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       SYNC_ADMIN_TOKEN: ${{ secrets.SYNC_ADMIN_TOKEN }}
       PROJECT_REF: zqgsgrwtxufxebaujegn
     steps:
@@ -62,7 +63,9 @@ jobs:
             test -n "$SUPABASE_DB_PASSWORD" || (echo "Missing SUPABASE_DB_PASSWORD secret" && exit 1)
           fi
           test -n "$SUPABASE_URL" || (echo "Missing SUPABASE_URL secret" && exit 1)
-          test -n "$SYNC_ADMIN_TOKEN" || (echo "Missing SYNC_ADMIN_TOKEN secret" && exit 1)
+          if [ "${{ inputs.run_publish_after_deploy }}" = "true" ]; then
+            test -n "$SUPABASE_SERVICE_ROLE_KEY" || test -n "$SYNC_ADMIN_TOKEN" || (echo "Missing SUPABASE_SERVICE_ROLE_KEY or SYNC_ADMIN_TOKEN secret" && exit 1)
+          fi
 
       - name: Install Supabase CLI
         if: inputs.deploy_migration == true || inputs.deploy_functions == true
@@ -109,7 +112,8 @@ jobs:
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "x-sync-admin-token": process.env.SYNC_ADMIN_TOKEN,
+              ...(process.env.SUPABASE_SERVICE_ROLE_KEY ? { Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` } : {}),
+              ...(process.env.SYNC_ADMIN_TOKEN ? { "x-sync-admin-token": process.env.SYNC_ADMIN_TOKEN } : {}),
             },
             body: JSON.stringify(payload),
           });

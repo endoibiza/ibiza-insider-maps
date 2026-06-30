@@ -63,12 +63,39 @@ const getRequiredEnv = (name: string) => {
   return value;
 };
 
-const requireSyncToken = (req: Request) => {
+const constantTimeEqual = (actual: string | null | undefined, expected: string | null | undefined) => {
+  if (!actual || !expected) return false;
+
+  const encoder = new TextEncoder();
+  const actualBytes = encoder.encode(actual);
+  const expectedBytes = encoder.encode(expected);
+  if (actualBytes.length !== expectedBytes.length) return false;
+
+  let diff = 0;
+  for (let index = 0; index < actualBytes.length; index += 1) {
+    diff |= actualBytes[index] ^ expectedBytes[index];
+  }
+  return diff === 0;
+};
+
+const requireAdminAccess = (req: Request) => {
   const expectedToken = Deno.env.get("SYNC_ADMIN_TOKEN") || Deno.env.get("ADMIN_API_KEY");
-  if (!expectedToken) throw new Error("SYNC_ADMIN_TOKEN or ADMIN_API_KEY is not configured");
+  const expectedServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!expectedToken && !expectedServiceRoleKey) {
+    throw new Error("SYNC_ADMIN_TOKEN, ADMIN_API_KEY, or SUPABASE_SERVICE_ROLE_KEY is not configured");
+  }
 
   const actualToken = req.headers.get("x-sync-admin-token") || req.headers.get("x-sync-secret");
-  if (actualToken !== expectedToken) throw new Error("Unauthorized sync request");
+  const bearerToken = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim();
+
+  if (
+    constantTimeEqual(actualToken, expectedToken) ||
+    constantTimeEqual(bearerToken, expectedServiceRoleKey)
+  ) {
+    return;
+  }
+
+  throw new Error("Unauthorized sync request");
 };
 
 const parseRequest = async (req: Request): Promise<Required<CollectRequest>> => {
@@ -395,7 +422,7 @@ serve(async (req) => {
   let supabase: SupabaseClient | null = null;
 
   try {
-    requireSyncToken(req);
+    requireAdminAccess(req);
     const request = await parseRequest(req);
     const supabaseUrl = getRequiredEnv("SUPABASE_URL");
     const serviceRoleKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");

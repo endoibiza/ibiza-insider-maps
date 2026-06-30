@@ -44,6 +44,7 @@ jobs:
     timeout-minutes: 25
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       SYNC_ADMIN_TOKEN: ${{ secrets.SYNC_ADMIN_TOKEN }}
       DRY_RUN_INPUT: ${{ github.event.inputs.dry_run || '' }}
       PUBLISH_INPUT: ${{ github.event.inputs.publish || '' }}
@@ -57,10 +58,13 @@ jobs:
           node <<'NODE'
           const scheduled = process.env.GITHUB_EVENT_NAME === "schedule";
           const supabaseUrl = process.env.SUPABASE_URL;
+          const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
           const token = process.env.SYNC_ADMIN_TOKEN;
 
           if (!supabaseUrl) throw new Error("Missing SUPABASE_URL secret");
-          if (!token) throw new Error("Missing SYNC_ADMIN_TOKEN secret");
+          if (!serviceRoleKey && !token) {
+            throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY or SYNC_ADMIN_TOKEN secret");
+          }
 
           const sourceKeys = (process.env.SOURCE_KEYS_INPUT || "")
             .split(",")
@@ -85,7 +89,8 @@ jobs:
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "x-sync-admin-token": token,
+              ...(serviceRoleKey ? { Authorization: `Bearer ${serviceRoleKey}` } : {}),
+              ...(token ? { "x-sync-admin-token": token } : {}),
             },
             body: JSON.stringify(payload),
           });
