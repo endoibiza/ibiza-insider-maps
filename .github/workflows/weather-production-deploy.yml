@@ -67,11 +67,11 @@ jobs:
 
       - name: Deploy weather collector
         if: inputs.deploy_functions == true
-        run: supabase functions deploy collect-ibiza-weather --project-ref "$PROJECT_REF"
+        run: supabase functions deploy collect-ibiza-weather --project-ref "$PROJECT_REF" --use-api
 
       - name: Deploy weather compatibility reader
         if: inputs.deploy_functions == true
-        run: supabase functions deploy get-weather --project-ref "$PROJECT_REF"
+        run: supabase functions deploy get-weather --project-ref "$PROJECT_REF" --use-api
 
       - name: Set AEMET Edge Function secret
         if: inputs.deploy_functions == true && env.AEMET_API_KEY != ''
