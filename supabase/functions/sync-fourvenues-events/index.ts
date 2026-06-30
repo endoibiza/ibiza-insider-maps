@@ -44,6 +44,12 @@ type FourvenuesEvent = {
   artists?: unknown;
 };
 
+type TicketRatesFetchResult = {
+  event: FourvenuesEvent;
+  source: "ticket-rates-endpoint" | "embedded-event-payload" | "empty";
+  error: string | null;
+};
+
 type SyncRequest = {
   start_date?: string;
   end_date?: string;
@@ -151,6 +157,8 @@ const KNOWN_VENUE_NAMES: Record<string, string> = {
   "club chinois": "Chinois",
   "chinois ibiza": "Chinois",
   chinois: "Chinois",
+  "playa soleil": "Playa Soleil",
+  "playa soleil ibiza": "Playa Soleil",
 };
 
 const normalizeVenueName = (value?: string | null) => {
@@ -192,6 +200,29 @@ const fetchBookingAvailability = async (eventId: string, quantity: number) => {
   ]);
 
   return { availability, zones };
+};
+
+const fetchTicketRatesForEvent = async (event: FourvenuesEvent): Promise<TicketRatesFetchResult> => {
+  if (!event._id) return { event, source: "empty", error: "Missing Fourvenues event ID" };
+
+  try {
+    const payload = await fetchFourvenuesJson("/ticket-rates", { event_id: event._id });
+    const endpointRates = dataArray(payload);
+
+    return {
+      event: { ...event, ticket_rates: endpointRates },
+      source: endpointRates.length > 0 ? "ticket-rates-endpoint" : "empty",
+      error: null,
+    };
+  } catch (error) {
+    const embeddedRates = arrayValue(event.ticket_rates);
+
+    return {
+      event,
+      source: embeddedRates.length > 0 ? "embedded-event-payload" : "empty",
+      error: error instanceof Error ? error.message : "Unknown ticket-rates error",
+    };
+  }
 };
 
 const isDateOnly = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
@@ -334,6 +365,9 @@ serve(async (req) => {
     let recordsWithTicketRates = 0;
     let recordsWithGuestList = 0;
     let recordsWithVipTables = 0;
+    let ticketRateEndpointRecords = 0;
+    let ticketRateEndpointErrors = 0;
+    const ticketRateErrorSamples: Array<{ fourvenues_event_id: string; event_name: string; error: string }> = [];
 
     while (keepFetching) {
       const url = new URL(`${getApiBaseUrl()}/events`);
@@ -363,35 +397,50 @@ serve(async (req) => {
 
       for (const event of events) {
         if (!event._id || !event.name || !event.start_date) continue;
+        const ticketRateResult = await fetchTicketRatesForEvent(event);
+        const enrichedEvent = ticketRateResult.event;
+
+        if (ticketRateResult.source === "ticket-rates-endpoint") ticketRateEndpointRecords += 1;
+        if (ticketRateResult.error) {
+          ticketRateEndpointErrors += 1;
+          if (ticketRateErrorSamples.length < 20) {
+            ticketRateErrorSamples.push({
+              fourvenues_event_id: event._id,
+              event_name: event.name,
+              error: ticketRateResult.error,
+            });
+          }
+        }
+
         seenExternalIds.push(event._id);
         const bookingData = syncRequest.include_vip_availability
           ? await fetchBookingAvailability(event._id, Math.min(Math.max(syncRequest.booking_quantity ?? 4, 1), 20))
           : null;
-        const commercialOptions = buildCommercialOptionsRow(event, null, bookingData);
+        const commercialOptions = buildCommercialOptionsRow(enrichedEvent, null, bookingData);
         if (commercialOptions.has_ticket_rates) recordsWithTicketRates += 1;
         if (commercialOptions.has_guest_list) recordsWithGuestList += 1;
         if (commercialOptions.has_vip_tables) recordsWithVipTables += 1;
 
         if (syncRequest.dry_run) {
-          if (syncRequest.include_records) dryRunRecords.push(buildIbizaEventRow(event));
+          if (syncRequest.include_records) dryRunRecords.push(buildIbizaEventRow(enrichedEvent));
           commercialSummaries.push(commercialOptions);
           continue;
         }
 
-        const payloadHash = await hashPayload(event);
+        const payloadHash = await hashPayload(enrichedEvent);
         await supabase
           .from("fourvenues_event_snapshots")
           .upsert({
             fourvenues_event_id: event._id,
-            organization_id: event.organization_id ?? null,
-            payload: event,
+            organization_id: enrichedEvent.organization_id ?? null,
+            payload: enrichedEvent,
             payload_hash: payloadHash,
             fetched_at: new Date().toISOString(),
           }, { onConflict: "fourvenues_event_id" });
 
         const { data: upsertedEvent, error: upsertError } = await supabase
           .from("ibiza_events")
-          .upsert(buildIbizaEventRow(event), { onConflict: "notion_page_id" })
+          .upsert(buildIbizaEventRow(enrichedEvent), { onConflict: "notion_page_id" })
           .select("id")
           .single();
 
@@ -399,7 +448,7 @@ serve(async (req) => {
 
         const { error: commercialError } = await supabase
           .from("fourvenues_event_commercial_options")
-          .upsert(buildCommercialOptionsRow(event, upsertedEvent?.id ?? null, bookingData), { onConflict: "fourvenues_event_id" });
+          .upsert(buildCommercialOptionsRow(enrichedEvent, upsertedEvent?.id ?? null, bookingData), { onConflict: "fourvenues_event_id" });
 
         if (commercialError) throw commercialError;
 
@@ -444,6 +493,9 @@ serve(async (req) => {
         records_with_ticket_rates: recordsWithTicketRates,
         records_with_guest_list: recordsWithGuestList,
         records_with_vip_tables: recordsWithVipTables,
+        ticket_rate_endpoint_records: ticketRateEndpointRecords,
+        ticket_rate_endpoint_errors: ticketRateEndpointErrors,
+        ticket_rate_error_samples: ticketRateErrorSamples,
         dry_run: syncRequest.dry_run,
         dry_run_records: syncRequest.dry_run && syncRequest.include_records ? dryRunRecords : undefined,
         dry_run_commercial_options: syncRequest.dry_run && syncRequest.include_records ? commercialSummaries : undefined,
