@@ -108,7 +108,35 @@ jobs:
           if (process.env.TARGET_DATE_INPUT) payload.target_date = process.env.TARGET_DATE_INPUT;
           if (sourceKeys.length > 0) payload.source_keys = sourceKeys;
 
-          const response = await fetch(`${process.env.SUPABASE_URL.replace(/\/$/, "")}/functions/v1/collect-ibiza-news`, {
+          const supabaseUrl = process.env.SUPABASE_URL.replace(/\/$/, "");
+          const madridDate = () =>
+            new Intl.DateTimeFormat("en-CA", {
+              timeZone: "Europe/Madrid",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+            }).format(new Date());
+
+          const expectedDigestDate = payload.target_date || madridDate();
+          const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+          const waitForPublishedDigest = async () => {
+            for (let attempt = 1; attempt <= 30; attempt += 1) {
+              const digestResponse = await fetch(`${supabaseUrl}/functions/v1/get-news`);
+              const digest = await digestResponse.json().catch(() => ({}));
+              const storyCount = Array.isArray(digest.stories) ? digest.stories.length : 0;
+              console.log(
+                `Digest verification attempt ${attempt}: date=${digest.digest?.digest_date || "none"} stories=${storyCount}`,
+              );
+
+              if (digestResponse.ok && digest.digest?.digest_date === expectedDigestDate && storyCount > 0) {
+                return;
+              }
+              await wait(10000);
+            }
+            throw new Error(`Timed out waiting for published digest ${expectedDigestDate}`);
+          };
+
+          const response = await fetch(`${supabaseUrl}/functions/v1/collect-ibiza-news`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -120,7 +148,16 @@ jobs:
 
           const text = await response.text();
           console.log(text);
-          if (!response.ok) throw new Error(`collect-ibiza-news failed with ${response.status}`);
+          if (!response.ok) {
+            const isIdleTimeout = response.status === 504 && text.includes("IDLE_TIMEOUT");
+            if (isIdleTimeout) {
+              console.log("Collector hit Supabase idle timeout; verifying whether the digest published successfully.");
+              await waitForPublishedDigest();
+              console.log(`Digest ${expectedDigestDate} is published; treating the idle timeout as recovered.`);
+              process.exit(0);
+            }
+            throw new Error(`collect-ibiza-news failed with ${response.status}`);
+          }
           NODE
         env:
           TARGET_DATE_INPUT: ${{ inputs.target_date }}
