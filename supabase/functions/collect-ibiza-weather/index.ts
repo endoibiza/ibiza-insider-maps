@@ -106,6 +106,18 @@ type ReportParts = {
   alerts: WeatherAlert[];
 };
 
+type JellyfishSignal = {
+  status: "unavailable" | "low" | "watch" | "elevated";
+  confidence: "low" | "medium";
+  headline: string;
+  explanation: string;
+  reasons: string[];
+  cautions: string[];
+  source: string;
+  medusas_url: string;
+  generated_at: string;
+};
+
 type BeachProfile = {
   id?: string | null;
   canonical_beach_id?: string | null;
@@ -131,6 +143,7 @@ type BeachProfile = {
   access_difficulty?: string | null;
   beach_type?: string | null;
   water_clarity?: string | null;
+  jellyfish_trap_bay?: boolean;
   lifeguard_caveat?: string;
 };
 
@@ -965,6 +978,51 @@ const fetchAndNormalizeSource = async (
 }> => {
   const fetchedAt = new Date().toISOString();
 
+  if (["ecmwf-open-data-ifs", "dwd-icon-eu-open-data", "cams-dust-air-quality"].includes(source.source_key)) {
+    const message = "Free/open data source registered; GRIB/Zarr preprocessing is required before automated ingestion.";
+    const snapshot = await insertSnapshot(supabase, runId, source, {
+      fetch_status: "skipped",
+      payload: {
+        reason: "preprocessor_required",
+        message,
+        no_scraping: true,
+        paid_api_required: false,
+        source_url: source.source_url,
+        next_step: "Add a GitHub Actions preprocessor that converts open model files into compact JSON for the Edge Function.",
+      },
+      message,
+    });
+
+    return {
+      status: sourceStatus(source, "skipped", snapshot.fetched_at, message),
+      points: [],
+      alerts: [],
+      report: {},
+    };
+  }
+
+  if (source.source_key === "ibiza-jellyfish-derived-risk") {
+    const message = "Derived after weather merge from wind, sea temperature, seasonality, and beach exposure; not a Medusas Ibiza feed.";
+    const snapshot = await insertSnapshot(supabase, runId, source, {
+      fetch_status: "skipped",
+      payload: {
+        reason: "derived_signal",
+        message,
+        medusas_url: "https://medusasibiza.es/",
+        no_scraping: true,
+        live_sightings: false,
+      },
+      message,
+    });
+
+    return {
+      status: sourceStatus(source, "skipped", snapshot.fetched_at, message),
+      points: [],
+      alerts: [],
+      report: {},
+    };
+  }
+
   if (source.source_key.startsWith("aemet-")) {
     const aemet = await fetchAemetOpenData(source);
     if (aemet.blocked) {
@@ -1313,6 +1371,80 @@ const timeRangeLabel = (items: Record<string, unknown>[]) => {
   return `${String(start).padStart(2, "0")}:00-${String(end).padStart(2, "0")}:00`;
 };
 
+const deriveJellyfishSignal = (
+  current: Record<string, unknown>,
+  marine: Record<string, unknown> | undefined,
+  reportDate: string,
+  profiles: BeachProfile[],
+): JellyfishSignal => {
+  const wind = round(current.wind_speed_kmh) ?? 0;
+  const gust = round(current.wind_gust_kmh) ?? wind;
+  const sea = round(marine?.sea_surface_temperature_c);
+  const month = Number(reportDate.slice(5, 7));
+  const warmSeason = month >= 5 && month <= 10;
+  const peakSeason = month >= 6 && month <= 9;
+  const trapBayCount = profiles.filter((profile) => profile.jellyfish_trap_bay).length;
+  const reasons: string[] = [];
+  const cautions: string[] = [];
+  let score = 0;
+
+  if (!warmSeason) {
+    reasons.push("Outside the main warm-water jellyfish season");
+  } else {
+    score += peakSeason ? 24 : 14;
+    reasons.push(peakSeason ? "Peak warm-season jellyfish window" : "Warm-season jellyfish window");
+  }
+
+  if (sea !== null) {
+    if (sea >= 26) {
+      score += 22;
+      reasons.push(`Warm sea near ${sea} C`);
+    } else if (sea >= 23) {
+      score += 12;
+      reasons.push(`Sea temperature near ${sea} C`);
+    } else {
+      reasons.push(`Cooler sea near ${sea} C`);
+    }
+  } else {
+    cautions.push("Sea temperature unavailable");
+  }
+
+  if (wind <= 8 && gust <= 18) {
+    score += 18;
+    reasons.push("Light wind can let surface patches linger");
+  } else if (gust >= 35) {
+    score -= 8;
+    reasons.push("Breezier conditions may disperse surface patches");
+  }
+
+  if (trapBayCount > 0) {
+    score += Math.min(14, trapBayCount * 2);
+    reasons.push(`${trapBayCount} active beach profiles marked as potential trap bays`);
+  }
+
+  const status: JellyfishSignal["status"] = score >= 58 ? "elevated" : score >= 34 ? "watch" : "low";
+  const headline = status === "elevated"
+    ? "Jellyfish risk signal elevated"
+    : status === "watch"
+      ? "Jellyfish watch signal"
+      : "Jellyfish signal low";
+
+  return {
+    status,
+    confidence: sea === null ? "low" : "medium",
+    headline,
+    explanation: "Derived from Ibiza Maps wind, sea temperature, seasonality and beach exposure fields. This is not live sighting data.",
+    reasons: reasons.slice(0, 5),
+    cautions: [
+      ...cautions,
+      "Check Medusas Ibiza or local beach reports for community sightings before swimming.",
+    ],
+    source: "Ibiza Maps derived signal",
+    medusas_url: "https://medusasibiza.es/",
+    generated_at: new Date().toISOString(),
+  };
+};
+
 const buildWeatherIntelligence = (
   current: Record<string, unknown>,
   marine: Record<string, unknown> | undefined,
@@ -1322,6 +1454,7 @@ const buildWeatherIntelligence = (
   sourceStatuses: SourceStatus[],
   disagreements: Array<Record<string, unknown>>,
   staleFlags: Array<Record<string, unknown>>,
+  jellyfishSignal: JellyfishSignal,
 ) => {
   const officialAlerts = alerts.filter((alert) => alert.official);
   const aemetStatuses = sourceStatuses.filter((status) => status.source_key.startsWith("aemet-"));
@@ -1394,6 +1527,25 @@ const buildWeatherIntelligence = (
       source: "stored daily forecast",
     });
   }
+  if (jellyfishSignal.status === "watch" || jellyfishSignal.status === "elevated") {
+    localWatchItems.push({
+      type: "jellyfish_signal",
+      priority: jellyfishSignal.status === "elevated" ? "medium" : "low",
+      label: jellyfishSignal.headline,
+      detail: jellyfishSignal.explanation,
+      source: jellyfishSignal.source,
+    });
+  }
+
+  const freeModelSources = sourceStatuses.filter((status) =>
+    ["ecmwf-open-data-ifs", "dwd-icon-eu-open-data", "cams-dust-air-quality"].includes(status.source_key),
+  );
+  const sourceGaps = [
+    ...freeModelSources
+      .filter((status) => status.status !== "success")
+      .map((status) => `${status.label}: ${status.message || "not automated yet"}`),
+    "Fire-risk, fuel-moisture, beach-flag, and live jellyfish sighting feeds are not configured as compliant automated sources yet.",
+  ];
 
   const confidenceDeductions = [
     aemetChecked ? 0 : 30,
@@ -1419,7 +1571,7 @@ const buildWeatherIntelligence = (
             : "settled conditions";
 
   const dailyDecisionSummary = mainConstraint === "settled conditions"
-    ? "AEMET and stored weather sources point to a usable Ibiza day; choose beaches by wind exposure, use local flags, and keep source timestamps in view."
+    ? "AEMET and stored weather sources point to a usable Ibiza day; choose beaches by wind exposure, check posted lifeguard guidance, and keep source timestamps in view."
     : `Today's main decision factor is ${mainConstraint}. Ibiza Maps keeps official AEMET status separate from model/free-source signals and ranks beaches by exposure.`;
 
   return {
@@ -1451,11 +1603,16 @@ const buildWeatherIntelligence = (
         ? "Stored sources disagree on at least one key metric; visitor guidance is conservative."
         : "Stored sources do not show a major disagreement on today's key public metrics.",
       commercial_use_note: "Open-Meteo-derived values are treated as fallback/cross-check data until commercial terms are approved.",
+      free_open_model_status: {
+        ecmwf: sourceStatuses.find((status) => status.source_key === "ecmwf-open-data-ifs")?.status || "not_configured",
+        icon_eu: sourceStatuses.find((status) => status.source_key === "dwd-icon-eu-open-data")?.status || "not_configured",
+        cams: sourceStatuses.find((status) => status.source_key === "cams-dust-air-quality")?.status || "not_configured",
+      },
     },
     local_watch_items: localWatchItems,
-    data_gaps: [
-      "Dust, brown-rain, fire-risk, fuel-moisture, and beach-flag feeds are not configured as compliant automated sources yet.",
-    ],
+    jellyfish_signal: jellyfishSignal,
+    source_gaps: sourceGaps,
+    data_gaps: sourceGaps,
     daily_decision_summary: dailyDecisionSummary,
     confidence_score: confidenceScore,
     confidence_label: confidenceLabel,
@@ -1626,6 +1783,7 @@ const beachCatalogRowToProfile = (row: Record<string, unknown>): BeachProfile | 
     access_difficulty: typeof row.access_difficulty === "string" ? row.access_difficulty : null,
     beach_type: typeof row.beach_type === "string" ? row.beach_type : null,
     water_clarity: typeof row.water_clarity === "string" ? row.water_clarity : null,
+    jellyfish_trap_bay: Boolean(row.jellyfish_trap_bay),
     lifeguard_caveat: lifeguardCaveatForBeach(row),
   };
 };
@@ -1686,6 +1844,7 @@ const scoreBeachProfile = (
   alerts: WeatherAlert[],
   daily: Record<string, unknown>[],
   timeWindow: BeachRecommendation["time_window"],
+  jellyfishSignal?: JellyfishSignal,
 ) => {
   const windDirection = intValue(current.wind_direction_deg);
   const waveDirection = intValue(marine?.wave_direction_deg);
@@ -1741,6 +1900,10 @@ const scoreBeachProfile = (
   if (uv >= 8) {
     score -= 4;
     cautions.push(`High UV ${uv}; plan shade`);
+  }
+  if (jellyfishSignal && profile.jellyfish_trap_bay && (jellyfishSignal.status === "watch" || jellyfishSignal.status === "elevated")) {
+    score -= jellyfishSignal.status === "elevated" ? 8 : 4;
+    cautions.push(`${jellyfishSignal.headline}; this beach is marked as a possible trap bay`);
   }
   if (profile.shelter_level >= 4 && !reasons.some((reason) => /shelter/i.test(reason))) reasons.push("Sheltered cove profile");
   if (profile.activity_tags.includes("sunset") && (timeWindow === "best_afternoon" || timeWindow === "best_sunset")) reasons.push("Strong sunset fit");
@@ -1811,6 +1974,7 @@ const buildBeachRecommendations = (
   alerts: WeatherAlert[],
   daily: Record<string, unknown>[],
   sourceStatuses: SourceStatus[],
+  jellyfishSignal?: JellyfishSignal,
 ): BeachRecommendation[] => {
   const generatedAt = new Date().toISOString();
   const sourceTimestamps = Object.fromEntries(sourceStatuses.map((status) => [status.source_key, status.status === "success" ? status.fetched_at : null]));
@@ -1838,7 +2002,7 @@ const buildBeachRecommendations = (
   for (const window of recommendationWindows) {
     const scored = profiles
       .map((profile) => {
-        const scoredProfile = scoreBeachProfile(profile, current, marine, alerts, daily, window);
+        const scoredProfile = scoreBeachProfile(profile, current, marine, alerts, daily, window, jellyfishSignal);
         const usage = selectedBeachUsage.get(profile.beach_key) ?? 0;
         const diversityPenalty = window === "avoid_exposed" ? 0 : usage * 9;
         return {
@@ -2087,6 +2251,8 @@ serve(async (req) => {
       const summary = buildSummary(current, merged.marine, merged.daily);
       const beachConditions = buildBeachConditions(current, merged.marine, alerts, merged.daily);
       const disagreements = buildDisagreements(points);
+      const beachProfiles = await fetchBeachProfiles(supabase);
+      const jellyfishSignal = deriveJellyfishSignal(current, merged.marine, request.target_date, beachProfiles);
       const weatherIntelligence = buildWeatherIntelligence(
         current,
         merged.marine,
@@ -2096,8 +2262,8 @@ serve(async (req) => {
         sourceStatuses,
         disagreements,
         staleFlags,
+        jellyfishSignal,
       );
-      const beachProfiles = await fetchBeachProfiles(supabase);
       const beachRecommendations = buildBeachRecommendations(
         beachProfiles,
         runId,
@@ -2107,6 +2273,7 @@ serve(async (req) => {
         alerts,
         merged.daily,
         sourceStatuses,
+        jellyfishSignal,
       );
       const alertsSummary = alerts.map((alert) => ({
         title: alert.title,
