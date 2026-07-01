@@ -71,7 +71,7 @@ jobs:
             .map((value) => value.trim())
             .filter(Boolean);
 
-          const payload = {
+          const basePayload = {
             run_type: scheduled ? "daily" : "manual",
             dry_run: scheduled ? false : process.env.DRY_RUN_INPUT !== "false",
             publish: scheduled ? true : process.env.PUBLISH_INPUT === "true",
@@ -80,8 +80,7 @@ jobs:
             limit_per_source: Number(process.env.LIMIT_PER_SOURCE_INPUT || 25),
           };
 
-          if (process.env.TARGET_DATE_INPUT) payload.target_date = process.env.TARGET_DATE_INPUT;
-          if (sourceKeys.length > 0) payload.source_keys = sourceKeys;
+          if (process.env.TARGET_DATE_INPUT) basePayload.target_date = process.env.TARGET_DATE_INPUT;
 
           const madridDate = () =>
             new Intl.DateTimeFormat("en-CA", {
@@ -91,7 +90,7 @@ jobs:
               day: "2-digit",
             }).format(new Date());
 
-          const expectedDigestDate = payload.target_date || madridDate();
+          const expectedDigestDate = basePayload.target_date || madridDate();
           const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
           const waitForPublishedDigest = async () => {
             for (let attempt = 1; attempt <= 30; attempt += 1) {
@@ -110,29 +109,102 @@ jobs:
             throw new Error(`Timed out waiting for published digest ${expectedDigestDate}`);
           };
 
-          console.log("Running collect-ibiza-news", JSON.stringify({ ...payload, source_keys: sourceKeys }, null, 2));
-
-          const response = await fetch(`${supabaseUrl.replace(/\/$/, "")}/functions/v1/collect-ibiza-news`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              ...(serviceRoleKey ? { Authorization: `Bearer ${serviceRoleKey}` } : {}),
-              ...(token ? { "x-sync-admin-token": token } : {}),
+          const defaultBatches = [
+            {
+              label: "core-media",
+              maxAiSummaries: 8,
+              sourceKeys: [
+                "diario-general-rss",
+                "periodico-pitiusas-atom",
+                "periodico-ibiza-atom",
+                "periodico-santa-eularia-atom",
+                "lavoz-ibiza-rss",
+                "lavoz-general-rss",
+              ],
             },
-            body: JSON.stringify(payload),
-          });
+            {
+              label: "official-review",
+              maxAiSummaries: 0,
+              sourceKeys: [
+                "santa-eularia-news-rss",
+                "santa-eularia-sitemap",
+                "consell-news-page",
+                "eivissa-news-page",
+                "sant-antoni-news-page",
+                "sant-josep-sitemap",
+                "sant-antoni-events-ical",
+                "ibiza-spotlight-magazine",
+              ],
+            },
+          ];
 
-          const text = await response.text();
-          console.log(text);
+          const batches = sourceKeys.length > 0
+            ? [{ label: "custom-source-keys", maxAiSummaries: basePayload.max_ai_summaries, sourceKeys }]
+            : defaultBatches;
 
-          if (!response.ok) {
-            const isIdleTimeout = response.status === 504 && text.includes("IDLE_TIMEOUT");
-            if (isIdleTimeout && payload.publish && !payload.dry_run) {
-              console.log("Collector hit Supabase idle timeout; verifying whether the digest published successfully.");
-              await waitForPublishedDigest();
-              console.log(`Digest ${expectedDigestDate} is published; treating the idle timeout as recovered.`);
-              process.exit(0);
+          const invokeCollector = async (batch) => {
+            const payload = {
+              ...basePayload,
+              max_ai_summaries: batch.maxAiSummaries,
+              source_keys: batch.sourceKeys,
+            };
+
+            console.log(`Running collect-ibiza-news batch: ${batch.label}`);
+            console.log(JSON.stringify(payload, null, 2));
+
+            const response = await fetch(`${supabaseUrl.replace(/\/$/, "")}/functions/v1/collect-ibiza-news`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                ...(serviceRoleKey ? { Authorization: `Bearer ${serviceRoleKey}` } : {}),
+                ...(token ? { "x-sync-admin-token": token } : {}),
+              },
+              body: JSON.stringify(payload),
+            });
+
+            const text = await response.text();
+            console.log(text);
+
+            if (!response.ok) {
+              const isIdleTimeout = response.status === 504 && text.includes("IDLE_TIMEOUT");
+              if (isIdleTimeout && payload.publish && !payload.dry_run) {
+                console.log("Collector hit Supabase idle timeout; verifying whether the digest published successfully.");
+                await waitForPublishedDigest();
+                console.log(`Digest ${expectedDigestDate} is published; treating the idle timeout as recovered.`);
+                return;
+              }
+              throw new Error(`collect-ibiza-news batch ${batch.label} failed with ${response.status}`);
             }
-            throw new Error(`collect-ibiza-news failed with ${response.status}`);
+          };
+
+          for (const batch of batches) {
+            await invokeCollector(batch);
+          }
+
+          const verifyDigest = async () => {
+            const digestResponse = await fetch(`${supabaseUrl.replace(/\/$/, "")}/functions/v1/get-news`);
+            const digest = await digestResponse.json().catch(() => ({}));
+            const stories = Array.isArray(digest.stories) ? digest.stories : [];
+            const badSourceUrls = stories.filter((story) => {
+              const sourceUrl = String(story.source_url || "");
+              return !sourceUrl || /\/(rss|feed)\/?$/i.test(sourceUrl);
+            });
+
+            console.log(
+              `Final digest verification: date=${digest.digest?.digest_date || "none"} stories=${stories.length} badSourceUrls=${badSourceUrls.length}`,
+            );
+
+            if (!digestResponse.ok) throw new Error(`get-news verification failed with ${digestResponse.status}`);
+            if (digest.digest?.digest_date !== expectedDigestDate) {
+              throw new Error(`Expected digest ${expectedDigestDate}, got ${digest.digest?.digest_date || "none"}`);
+            }
+            if (stories.length === 0) throw new Error(`Digest ${expectedDigestDate} has no public stories`);
+            if (badSourceUrls.length > 0) {
+              throw new Error(`Digest ${expectedDigestDate} has ${badSourceUrls.length} missing/feed source URLs`);
+            }
+          };
+
+          if (basePayload.publish && !basePayload.dry_run) {
+            await verifyDigest();
           }
           NODE

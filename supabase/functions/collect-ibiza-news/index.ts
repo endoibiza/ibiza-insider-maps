@@ -46,6 +46,14 @@ type DatabaseSource = {
 };
 
 type SupabaseClient = ReturnType<typeof createClient>;
+type DigestStory = {
+  id: string;
+  headline: string;
+  summary: string;
+  digest_section: string;
+  source_url: string;
+  curation_score: number;
+};
 
 const CORE_SOURCE_KEYS = new Set(["diario-general-rss", "periodico-pitiusas-atom", "periodico-ibiza-atom", "lavoz-ibiza-rss", "lavoz-general-rss"]);
 const MUNICIPAL_AREA_LABELS: Record<string, string> = {
@@ -370,6 +378,21 @@ const getExistingStory = async (supabase: SupabaseClient, sourceKey: string, can
   } | null;
 };
 
+const getPublishedDigestStories = async (supabase: SupabaseClient, targetDate: string) => {
+  const { data, error } = await supabase
+    .from("ibiza_news_stories")
+    .select("id,headline,summary,digest_section,source_url,curation_score")
+    .eq("status", "published")
+    .eq("story_date", targetDate)
+    .not("source_url", "is", null)
+    .order("curation_score", { ascending: false })
+    .order("published_at", { ascending: false })
+    .limit(80);
+
+  if (error) throw error;
+  return (data || []) as DigestStory[];
+};
+
 const findSemanticDuplicate = async (supabase: SupabaseClient, candidate: ClassifiedNewsCandidate) => {
   const storyDate = candidate.published_at?.slice(0, 10);
   if (!storyDate) return null;
@@ -473,7 +496,7 @@ serve(async (req) => {
     let storiesPublished = 0;
     let duplicatesSeen = 0;
     let aiSummariesUsed = 0;
-    const publishedStories: Array<{ id: string; headline: string; summary: string; digest_section: string; source_url: string; curation_score: number }> = [];
+    const publishedStories: DigestStory[] = [];
     const skippedSources: Array<Record<string, unknown>> = [];
     const sourceFailures: Array<Record<string, unknown>> = [];
     const sourcesChecked: string[] = [];
@@ -669,8 +692,11 @@ serve(async (req) => {
       throw new Error("All selected core news sources failed or were unavailable.");
     }
 
-    const digestSections = buildDigestSections(publishedStories, request.target_date);
-    const digestSummary = buildDigestSummary(publishedStories, request.target_date, sourcesChecked);
+    const digestStories = request.publish && !request.dry_run
+      ? await getPublishedDigestStories(supabase, request.target_date)
+      : publishedStories;
+    const digestSections = buildDigestSections(digestStories, request.target_date);
+    const digestSummary = buildDigestSummary(digestStories, request.target_date, sourcesChecked);
     const digestStatus = request.publish && !request.dry_run ? "published" : "draft";
 
     if (!(request.dry_run && publishedStories.length === 0)) {
@@ -690,7 +716,7 @@ serve(async (req) => {
           title: `Ibiza News Report — ${request.target_date}`,
           summary: digestSummary,
           sections: digestSections,
-          story_ids: publishedStories.map((story) => story.id),
+          story_ids: digestStories.map((story) => story.id),
           source_keys: sources.map((source) => source.source_key),
           sources_checked: sourcesChecked,
           skipped_sources: skippedSources.slice(0, 100),
