@@ -56,7 +56,7 @@ describe("Ibiza news ingestion helpers", () => {
 
     const classified = classifyCandidate(candidate, rssSource);
 
-    expect(classified.area).toContain("Santa Eulària");
+    expect(classified.area).toContain("Santa Eulària des Riu");
     expect(classified.category).toBe("Transport");
     expect(classified.digest_section).toBe("santa_eularia");
     expect(shouldPublishCandidate(classified, "2026-06-27")).toEqual({ publishable: true });
@@ -172,6 +172,32 @@ describe("Ibiza news ingestion helpers", () => {
     });
   });
 
+  it("does not publish broad Valencia society stories that mention the Jesús station", () => {
+    const raw: RawNewsCandidate = {
+      source_key: "diario-general-rss",
+      source_name: "Diario de Ibiza RSS",
+      source_type: "rss",
+      publish_mode: "auto",
+      source_url: "https://www.diariodeibiza.es/rss/",
+      canonical_url: "https://www.diariodeibiza.es/sociedad/2026/07/03/3-julio-veinte-anos-accidente-132076085.html",
+      headline: "July 3: twenty years since the accident that shocked Valencia and left an open wound",
+      source_description:
+        "On July 3, 2006, Valencia suffered a railway tragedy at the entrance curve to the Jesús station.",
+      published_at: "2026-07-03T08:00:00.000Z",
+      language: "es",
+      raw_metadata: {},
+    };
+
+    const classified = classifyCandidate(raw, rssSource);
+
+    expect(classified.area).toEqual(["Island-Wide"]);
+    expect(classified.ibiza_maps_relevant).toBe(false);
+    expect(shouldPublishCandidate(classified, "2026-07-03")).toEqual({
+      publishable: false,
+      reason: "missing Ibiza-local relevance signal",
+    });
+  });
+
   it("does not treat San Jose, California as Sant Josep / San José, Ibiza", () => {
     const raw: RawNewsCandidate = {
       source_key: "diario-general-rss",
@@ -250,9 +276,31 @@ describe("Ibiza news ingestion helpers", () => {
 
     const classified = classifyCandidate(raw, rssSource);
 
-    expect(classified.area).toContain("San Antonio");
+    expect(classified.area).toContain("Sant Antoni de Portmany");
     expect(classified.ibiza_maps_relevant).toBe(true);
     expect(shouldPublishCandidate(classified, "2026-06-29")).toEqual({ publishable: true });
+  });
+
+  it("allows Jesús only when the article has explicit Ibiza context", () => {
+    const raw: RawNewsCandidate = {
+      source_key: "diario-general-rss",
+      source_name: "Diario de Ibiza RSS",
+      source_type: "rss",
+      publish_mode: "auto",
+      source_url: "https://www.diariodeibiza.es/rss/",
+      canonical_url: "https://www.diariodeibiza.es/ibiza/2026/07/03/obras-jesus-santa-eularia-132000001.html",
+      headline: "New works begin in Jesús, Ibiza",
+      source_description: "The Santa Eulària des Riu council announced works affecting residents in Jesús.",
+      published_at: "2026-07-03T08:00:00.000Z",
+      language: "en",
+      raw_metadata: {},
+    };
+
+    const classified = classifyCandidate(raw, rssSource);
+
+    expect(classified.area).toContain("Santa Eulària des Riu");
+    expect(classified.ibiza_maps_relevant).toBe(true);
+    expect(shouldPublishCandidate(classified, "2026-07-03")).toEqual({ publishable: true });
   });
 
   it("does not publish obituary items from general feeds without local signal", () => {
@@ -332,7 +380,7 @@ describe("Ibiza news ingestion helpers", () => {
       publish_mode: "auto",
     });
 
-    expect(classified.area).toEqual(["San Antonio"]);
+    expect(classified.area).toEqual(["Sant Antoni de Portmany"]);
   });
 
   it("keeps Formentera as a first-class area when the article is Formentera-specific", () => {
