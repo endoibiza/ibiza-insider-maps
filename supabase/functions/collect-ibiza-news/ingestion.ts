@@ -75,23 +75,24 @@ const CATEGORY_KEYWORDS: Array<[string, RegExp]> = [
 ];
 
 const AREA_KEYWORDS: Array<[string, RegExp]> = [
-  ["Santa Eulària", /\b(santa eul[àa]ria|santa eularia|santa eulalia|es canar|es can[áa]|cala llonga|jes[uú]s|puig d'en valls)\b/i],
-  ["Ibiza Town", /\b(eivissa|ibiza town|vila|dalt vila|platja d'en bossa|playa d'en bossa)\b/i],
-  ["San Antonio", /\b(sant antoni|portmany|west end|ses variades|cala de bou)\b/i],
-  ["San José", /\b(sant josep(?: de sa talaia)?|sant jordi|es cubells|cala vedella|cala tarida)\b/i],
-  ["Sant Joan", /\b(sant joan|portinatx|sant miquel|san miguel)\b/i],
+  ["Santa Eulària des Riu", /\b(santa eul[àa]ria(?: des riu)?|santa eularia(?: des riu)?|santa eulalia(?: del r[ií]o)?|es canar|es can[áa]|cala llonga|puig d'en valls|santa gertrudis(?: de fruitera)?)\b/i],
+  ["Eivissa", /\b(eivissa|ibiza town|ciutat d[' ]eivissa|ciudad de ibiza|vila|dalt vila|figueretes|talamanca)\b/i],
+  ["Sant Antoni de Portmany", /\b(sant antoni(?: de portmany)?|portmany|west end|ses variades|santa agn[eè]s(?: de corona)?|sant rafel(?: de sa creu)?|san rafael)\b/i],
+  ["Sant Josep de sa Talaia", /\b(sant josep(?: de sa talaia)?|sant jordi(?: de ses salines)?|sant agust[ií](?: des vedr[àa])?|es cubells|cala de bou|cala vedella|cala tarida|cala bassa|cala comte|platja d'en bossa|playa d'en bossa|port des torrent)\b/i],
+  ["Sant Joan de Labritja", /\b(sant joan(?: de labritja)?|sant miquel(?: de balansat)?|sant vicent(?: de sa cala)?|portinatx|benirr[àa]s)\b/i],
   ["Formentera", /\b(formentera)\b/i],
 ];
 
 const LOCAL_SIGNAL_PATTERN =
-  /\b(ibiza|eivissa|piti[uü]sas|formentera|santa eul[àa]ria|santa eularia|santa eulalia|sant antoni|portmany|west end|ses variades|sant josep(?: de sa talaia)?|sant joan|sant rafael|sant rafel|sant jordi|sant miquel|san miguel|es canar|es can[áa]|cala llonga|cala bou|cala vedella|cala tarida|es cubells|portinatx|jes[uú]s|puig d'en valls|dalt vila|playa d'en bossa|platja d'en bossa)\b/i;
+  /\b(ibiza|eivissa|piti[uü]sas|formentera|santa eul[àa]ria(?: des riu)?|santa eularia(?: des riu)?|santa eulalia(?: del r[ií]o)?|sant antoni(?: de portmany)?|portmany|west end|ses variades|sant josep(?: de sa talaia)?|sant joan(?: de labritja)?|sant rafel|sant rafael|sant jordi(?: de ses salines)?|sant agust[ií](?: des vedr[àa])?|sant miquel(?: de balansat)?|sant vicent(?: de sa cala)?|es canar|es can[áa]|cala llonga|cala de bou|cala vedella|cala tarida|cala bassa|cala comte|es cubells|portinatx|benirr[àa]s|puig d'en valls|santa gertrudis(?: de fruitera)?|dalt vila|figueretes|talamanca|playa d'en bossa|platja d'en bossa|port des torrent)\b/i;
 
 const IBIZA_CONTEXT_PATTERN = /\b(ibiza|eivissa|piti[uü]sas|formentera)\b/i;
 
 const AMBIGUOUS_AREA_KEYWORDS: Array<[string, RegExp]> = [
-  ["San Antonio", /\bsan antonio\b/i],
-  ["San José", /\bsan jos[eé]\b/i],
-  ["Sant Joan", /\bsan juan\b/i],
+  ["Santa Eulària des Riu", /\bjes[uú]s\b/i],
+  ["Sant Antoni de Portmany", /\bsan antonio\b/i],
+  ["Sant Josep de sa Talaia", /\bsan jos[eé](?: de sa talaia)?\b/i],
+  ["Sant Joan de Labritja", /\bsan juan\b/i],
 ];
 
 function removePublisherBoilerplate(value: string): string {
@@ -413,10 +414,14 @@ function primaryArea(area: string[]): string {
   return area[0] || "Island-Wide";
 }
 
+function isSantaEulariaArea(area: string[]): boolean {
+  return area.some((label) => label === "Santa Eulària des Riu" || label === "Santa Eulària" || label === "Es Canar" || label === "Cala Llonga");
+}
+
 function digestSection(category: string, area: string[], headline: string): ClassifiedNewsCandidate["digest_section"] {
   if (/\b(opening|opens|apertura|new business|restaurant|hotel)\b/i.test(headline) || category === "Business") return "new_businesses";
   if (category === "Crime") return "weekly_crime";
-  if (area.includes("Santa Eulària")) return "santa_eularia";
+  if (isSantaEulariaArea(area)) return "santa_eularia";
   return "island_wide";
 }
 
@@ -471,7 +476,7 @@ export function classifyCandidate(candidate: RawNewsCandidate, source: NewsSourc
     primary_area: primaryArea(area),
     significance,
     digest_section: digestSection(category, area, candidate.headline),
-    santa_eularia: area.includes("Santa Eulària") || area.includes("Es Canar") || area.includes("Cala Llonga"),
+    santa_eularia: isSantaEulariaArea(area),
     ibiza_maps_relevant: localSignal || localSourceScope,
     curation_score: calculateCurationScore(candidate, category, area, significance),
     dedupe_key: stableHash(`${normalizedHeadline}|${candidate.published_at?.slice(0, 10) || ""}`),

@@ -57,12 +57,12 @@ type DigestStory = {
 
 const CORE_SOURCE_KEYS = new Set(["diario-general-rss", "periodico-pitiusas-atom", "periodico-ibiza-atom", "lavoz-ibiza-rss", "lavoz-general-rss"]);
 const MUNICIPAL_AREA_LABELS: Record<string, string> = {
-  "Santa Eularia": "Santa Eulària",
-  "Santa Eulària": "Santa Eulària",
-  Eivissa: "Ibiza Town",
-  "Sant Antoni": "San Antonio",
-  "Sant Josep": "San José",
-  "Sant Joan": "Sant Joan",
+  "Santa Eularia": "Santa Eulària des Riu",
+  "Santa Eulària": "Santa Eulària des Riu",
+  Eivissa: "Eivissa",
+  "Sant Antoni": "Sant Antoni de Portmany",
+  "Sant Josep": "Sant Josep de sa Talaia",
+  "Sant Joan": "Sant Joan de Labritja",
 };
 
 const getRequiredEnv = (name: string) => {
