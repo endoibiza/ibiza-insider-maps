@@ -422,6 +422,7 @@ const cleanupPublishedStoriesForTargetDate = async (
   if (error) throw error;
 
   let demoted = 0;
+  let normalized = 0;
   for (const story of (data || []) as PublishedStoryForCleanup[]) {
     const source = sourcesByKey.get(story.source_key);
     if (!source) continue;
@@ -444,7 +445,29 @@ const cleanupPublishedStoriesForTargetDate = async (
 
     const classified = classifyCandidate(rawCandidate, source);
     const publishDecision = shouldPublishCandidate(classified, targetDate);
-    if (publishDecision.publishable || !shouldRejectExistingPublishedStory(publishDecision.reason)) continue;
+    if (publishDecision.publishable) {
+      const { error: normalizeError } = await supabase
+        .from("ibiza_news_stories")
+        .update({
+          area: classified.area,
+          primary_area: classified.primary_area,
+          digest_section: classified.digest_section,
+          santa_eularia: classified.santa_eularia,
+          ibiza_maps_relevant: classified.ibiza_maps_relevant,
+          curation_score: classified.curation_score,
+          raw_metadata: {
+            ...rawMetadata,
+            cleanup_normalized_at: new Date().toISOString(),
+          },
+        })
+        .eq("id", story.id);
+
+      if (normalizeError) throw normalizeError;
+      normalized += 1;
+      continue;
+    }
+
+    if (!shouldRejectExistingPublishedStory(publishDecision.reason)) continue;
 
     const { error: updateError } = await supabase
       .from("ibiza_news_stories")
@@ -474,7 +497,7 @@ const cleanupPublishedStoriesForTargetDate = async (
     });
   }
 
-  return demoted;
+  return { demoted, normalized };
 };
 
 const findSemanticDuplicate = async (supabase: SupabaseClient, candidate: ClassifiedNewsCandidate) => {
@@ -582,6 +605,7 @@ serve(async (req) => {
     let duplicatesSeen = 0;
     let aiSummariesUsed = 0;
     let cleanupDemoted = 0;
+    let cleanupNormalized = 0;
     const publishedStories: DigestStory[] = [];
     const skippedSources: Array<Record<string, unknown>> = [];
     const sourceFailures: Array<Record<string, unknown>> = [];
@@ -779,7 +803,9 @@ serve(async (req) => {
     }
 
     if (request.publish && !request.dry_run) {
-      cleanupDemoted = await cleanupPublishedStoriesForTargetDate(supabase, request.target_date, sourcesByKey, skippedSources);
+      const cleanupResult = await cleanupPublishedStoriesForTargetDate(supabase, request.target_date, sourcesByKey, skippedSources);
+      cleanupDemoted = cleanupResult.demoted;
+      cleanupNormalized = cleanupResult.normalized;
     }
 
     const digestStories = request.publish && !request.dry_run
@@ -818,6 +844,7 @@ serve(async (req) => {
             stories_published: storiesPublished,
             duplicates_seen: duplicatesSeen,
             cleanup_demoted: cleanupDemoted,
+            cleanup_normalized: cleanupNormalized,
             source_failures: sourceFailures.length,
             ai_summaries_used: aiSummariesUsed,
           },
@@ -846,6 +873,7 @@ serve(async (req) => {
       stories_published: storiesPublished,
       duplicates_seen: duplicatesSeen,
       cleanup_demoted: cleanupDemoted,
+      cleanup_normalized: cleanupNormalized,
       skipped: skippedSources.length,
       failed_sources: sourceFailures.length,
       ai_summaries_used: aiSummariesUsed,
@@ -872,6 +900,7 @@ serve(async (req) => {
           digest_status: digestStatus,
           ai_summaries_used: aiSummariesUsed,
           cleanup_demoted: cleanupDemoted,
+          cleanup_normalized: cleanupNormalized,
         },
       })
       .eq("id", runId);
