@@ -9,6 +9,7 @@ import {
   extractCandidates,
   NewsSourceConfig,
   normalizeWhitespace,
+  RawNewsCandidate,
   sha256,
   shouldPublishCandidate,
   stripHtml,
@@ -393,6 +394,89 @@ const getPublishedDigestStories = async (supabase: SupabaseClient, targetDate: s
   return (data || []) as DigestStory[];
 };
 
+type PublishedStoryForCleanup = {
+  id: string;
+  source_key: string;
+  source_url: string | null;
+  canonical_url: string | null;
+  original_headline: string | null;
+  headline: string;
+  raw_metadata: Record<string, unknown> | null;
+  published_at: string | null;
+  original_language: string | null;
+};
+
+const cleanupPublishedStoriesForTargetDate = async (
+  supabase: SupabaseClient,
+  targetDate: string,
+  sourcesByKey: Map<string, NewsSourceConfig>,
+  skippedSources: Array<Record<string, unknown>>,
+) => {
+  const { data, error } = await supabase
+    .from("ibiza_news_stories")
+    .select("id,source_key,source_url,canonical_url,original_headline,headline,raw_metadata,published_at,original_language")
+    .eq("status", "published")
+    .eq("story_date", targetDate)
+    .limit(200);
+
+  if (error) throw error;
+
+  let demoted = 0;
+  for (const story of (data || []) as PublishedStoryForCleanup[]) {
+    const source = sourcesByKey.get(story.source_key);
+    if (!source) continue;
+
+    const canonicalUrl = canonicalizeUrl(story.canonical_url || story.source_url);
+    const rawMetadata = story.raw_metadata || {};
+    const rawCandidate: RawNewsCandidate = {
+      source_key: story.source_key,
+      source_name: source.source_name,
+      source_type: source.source_type,
+      publish_mode: source.publish_mode || "review",
+      source_url: source.source_url,
+      canonical_url: canonicalUrl,
+      headline: story.original_headline || story.headline,
+      source_description: typeof rawMetadata.source_description === "string" ? rawMetadata.source_description : null,
+      published_at: story.published_at,
+      language: story.original_language || source.default_language || "es",
+      raw_metadata: rawMetadata,
+    };
+
+    const classified = classifyCandidate(rawCandidate, source);
+    const publishDecision = shouldPublishCandidate(classified, targetDate);
+    if (publishDecision.publishable || !shouldRejectExistingPublishedStory(publishDecision.reason)) continue;
+
+    const { error: updateError } = await supabase
+      .from("ibiza_news_stories")
+      .update({
+        status: "rejected",
+        area: classified.area,
+        primary_area: classified.primary_area,
+        digest_section: classified.digest_section,
+        santa_eularia: classified.santa_eularia,
+        ibiza_maps_relevant: classified.ibiza_maps_relevant,
+        curation_score: classified.curation_score,
+        raw_metadata: {
+          ...rawMetadata,
+          cleanup_publish_decision: publishDecision,
+          cleanup_demoted_at: new Date().toISOString(),
+        },
+      })
+      .eq("id", story.id);
+
+    if (updateError) throw updateError;
+    demoted += 1;
+    skippedSources.push({
+      source_key: story.source_key,
+      headline: story.headline,
+      url: canonicalUrl,
+      reason: `published story demoted: ${publishDecision.reason}`,
+    });
+  }
+
+  return demoted;
+};
+
 const findSemanticDuplicate = async (supabase: SupabaseClient, candidate: ClassifiedNewsCandidate) => {
   const storyDate = candidate.published_at?.slice(0, 10);
   if (!storyDate) return null;
@@ -487,6 +571,7 @@ serve(async (req) => {
     if (sourceError) throw sourceError;
 
     const sources = (sourceRows as DatabaseSource[]).map(toSourceConfig).filter((source): source is NewsSourceConfig => Boolean(source));
+    const sourcesByKey = new Map(sources.map((source) => [source.source_key, source]));
     const selectedCoreCount = sources.filter((source) => CORE_SOURCE_KEYS.has(source.source_key)).length;
 
     let successfulCoreSources = 0;
@@ -496,6 +581,7 @@ serve(async (req) => {
     let storiesPublished = 0;
     let duplicatesSeen = 0;
     let aiSummariesUsed = 0;
+    let cleanupDemoted = 0;
     const publishedStories: DigestStory[] = [];
     const skippedSources: Array<Record<string, unknown>> = [];
     const sourceFailures: Array<Record<string, unknown>> = [];
@@ -692,6 +778,10 @@ serve(async (req) => {
       throw new Error("All selected core news sources failed or were unavailable.");
     }
 
+    if (request.publish && !request.dry_run) {
+      cleanupDemoted = await cleanupPublishedStoriesForTargetDate(supabase, request.target_date, sourcesByKey, skippedSources);
+    }
+
     const digestStories = request.publish && !request.dry_run
       ? await getPublishedDigestStories(supabase, request.target_date)
       : publishedStories;
@@ -727,6 +817,7 @@ serve(async (req) => {
             stories_staged: storiesStaged,
             stories_published: storiesPublished,
             duplicates_seen: duplicatesSeen,
+            cleanup_demoted: cleanupDemoted,
             source_failures: sourceFailures.length,
             ai_summaries_used: aiSummariesUsed,
           },
@@ -754,6 +845,7 @@ serve(async (req) => {
       stories_staged: storiesStaged,
       stories_published: storiesPublished,
       duplicates_seen: duplicatesSeen,
+      cleanup_demoted: cleanupDemoted,
       skipped: skippedSources.length,
       failed_sources: sourceFailures.length,
       ai_summaries_used: aiSummariesUsed,
@@ -779,6 +871,7 @@ serve(async (req) => {
           dry_run: request.dry_run,
           digest_status: digestStatus,
           ai_summaries_used: aiSummariesUsed,
+          cleanup_demoted: cleanupDemoted,
         },
       })
       .eq("id", runId);
