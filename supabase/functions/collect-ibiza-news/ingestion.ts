@@ -33,6 +33,7 @@ export interface ClassifiedNewsCandidate extends RawNewsCandidate {
   summary_seed: string;
   category: string;
   area: string[];
+  area_keys: string[];
   primary_area: string;
   significance: string;
   digest_section: "island_wide" | "santa_eularia" | "new_businesses" | "weekly_crime";
@@ -60,9 +61,9 @@ const DIRECT_URL_BLOCKLIST = new Set([
 ]);
 
 const CATEGORY_KEYWORDS: Array<[string, RegExp]> = [
+  ["Public Safety", /\b(emergency|112|fire|incendio|bomberos|police|policia|polic[ií]a|guardia civil|rescue|rescat|safety|seguridad|socorrista|missing person|missing child|disappearance|desaparecid[oa]s?|desaparici[oó]n|b[uú]squeda|search (?:operation|effort|party))\b/i],
   ["Weather Alert", /\b(aemet|weather|storm|rain|wind|alerta|aviso|meteo|temporal|calor|heat)\b/i],
   ["Transport", /\b(airport|aeropuerto|flight|ferry|bus|taxi|traffic|transport|road|carretera|port|puerto|parking)\b/i],
-  ["Public Safety", /\b(emergency|112|fire|incendio|bomberos|police|policia|polic[ií]a|guardia civil|rescue|rescat|safety|seguridad|socorrista)\b/i],
   ["Crime", /\b(arrest|detenido|detenida|robbery|theft|drug|droga|crime|delito|court|tribunal|prison|violencia|agresi[oó]n)\b/i],
   ["Government", /\b(council|consell|govern|gobierno|ministros|ayuntamiento|ajuntament|plen[oa]|mayor|alcald|councillor|municipal)\b/i],
   ["Infrastructure", /\b(works|obras|roadworks|water|agua|sewer|electric|power|construction|vivienda|housing)\b/i],
@@ -94,6 +95,33 @@ const AMBIGUOUS_AREA_KEYWORDS: Array<[string, RegExp]> = [
   ["Sant Josep de sa Talaia", /\bsan jos[eé](?: de sa talaia)?\b/i],
   ["Sant Joan de Labritja", /\bsan juan\b/i],
 ];
+
+const AREA_KEY_ALIASES: Array<[string, RegExp]> = [
+  ["island-wide", /^(island[- ]wide|ibiza[- ]wide)$/i],
+  ["eivissa", /^(eivissa|ibiza town|ciutat d[' ]eivissa|ciudad de ibiza)$/i],
+  ["santa-eularia-des-riu", /^(santa eul[àa]ria(?: des riu)?|santa eularia(?: des riu)?|santa eulalia(?: del r[ií]o)?|es canar|es can[áa]|cala llonga|puig d'en valls|santa gertrudis(?: de fruitera)?|jes[uú]s)$/i],
+  ["sant-antoni-de-portmany", /^(sant antoni(?: de portmany)?|san antonio|portmany|ses variades|santa agn[eè]s(?: de corona)?|sant rafel(?: de sa creu)?|san rafael)$/i],
+  ["sant-josep-de-sa-talaia", /^(sant josep(?: de sa talaia)?|san jos[eé](?: de sa talaia)?|sant jordi(?: de ses salines)?|sant agust[ií](?: des vedr[àa])?|es cubells|cala de bou|cala vedella|cala tarida|cala bassa|cala comte|platja d'en bossa|playa d'en bossa|port des torrent)$/i],
+  ["sant-joan-de-labritja", /^(sant joan(?: de labritja)?|san juan|sant miquel(?: de balansat)?|sant vicent(?: de sa cala)?|portinatx|benirr[àa]s)$/i],
+  ["formentera", /^formentera$/i],
+];
+
+export function canonicalAreaKeys(labels: string[]): string[] {
+  const keys = labels.flatMap((label) => {
+    const normalized = normalizeWhitespace(label);
+    return AREA_KEY_ALIASES.find(([, pattern]) => pattern.test(normalized))?.[0] ?? [];
+  });
+  return Array.from(new Set(keys));
+}
+
+export function normalizePublicSourceLabel(value: string): string {
+  const normalized = normalizeWhitespace(value);
+  const comparable = normalized.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (/^diario de ibiza(?:\s+rss)?$/.test(comparable)) return "Diario de Ibiza";
+  if (comparable.startsWith("periodico de ibiza y formentera")) return "Periódico de Ibiza y Formentera";
+  if (/^la voz de ibiza(?:\s+rss)?$/.test(comparable)) return "La Voz de Ibiza";
+  return normalized.replace(/\s+RSS$/i, "").trim();
+}
 
 function removePublisherBoilerplate(value: string): string {
   return value
@@ -461,6 +489,7 @@ export function calculateCurationScore(candidate: RawNewsCandidate, category: st
 export function classifyCandidate(candidate: RawNewsCandidate, source: NewsSourceConfig): ClassifiedNewsCandidate {
   const category = source.default_category || classifyCategory(candidate);
   const area = classifyArea(candidate, source);
+  const areaKeys = canonicalAreaKeys(area);
   const significance = classifySignificance(candidate, category);
   const summarySeed = trimSummary(candidate.source_description, candidate.headline);
   const canonicalUrl = candidate.canonical_url || "";
@@ -473,6 +502,7 @@ export function classifyCandidate(candidate: RawNewsCandidate, source: NewsSourc
     summary_seed: summarySeed,
     category,
     area,
+    area_keys: areaKeys.length > 0 ? areaKeys : ["island-wide"],
     primary_area: primaryArea(area),
     significance,
     digest_section: digestSection(category, area, candidate.headline),
@@ -516,10 +546,77 @@ function isObituaryCandidate(candidate: RawNewsCandidate): boolean {
   return /\b(esquelas?|obituar(?:y|io)|necrol[oó]gica|nota\s+(?:f[uú]nebre|mortuoria))\b/i.test(haystack);
 }
 
+const QUANTITY_WORDS: Record<string, number> = {
+  one: 1,
+  uno: 1,
+  una: 1,
+  two: 2,
+  dos: 2,
+  three: 3,
+  tres: 3,
+  four: 4,
+  cuatro: 4,
+  five: 5,
+  cinco: 5,
+  six: 6,
+  seis: 6,
+  seven: 7,
+  siete: 7,
+  eight: 8,
+  ocho: 8,
+  nine: 9,
+  nueve: 9,
+  ten: 10,
+  diez: 10,
+  eleven: 11,
+  once: 11,
+  twelve: 12,
+  doce: 12,
+  thirteen: 13,
+  trece: 13,
+  fourteen: 14,
+  catorce: 14,
+  fifteen: 15,
+  quince: 15,
+};
+
+const QUANTITY_TOKEN = `(?:\\d+|${Object.keys(QUANTITY_WORDS).join("|")})`;
+const EVIDENCE_ENTITY_PATTERNS: RegExp[] = [
+  new RegExp(`\\b(${QUANTITY_TOKEN})(?:\\s+[\\p{L}-]+){0,2}\\s+(?:people|persons?|personas?|migrants?|migrantes?)\\b`, "giu"),
+  new RegExp(`\\b(${QUANTITY_TOKEN})(?:\\s+[\\p{L}-]+){0,2}\\s+(?:boats?|vessels?|pateras?|embarcaciones?)\\b`, "giu"),
+  new RegExp(`\\b(${QUANTITY_TOKEN})(?:\\s+[\\p{L}-]+){0,2}\\s+(?:vehicles?|veh[ií]culos?|cars?|coches?)\\b`, "giu"),
+];
+
+function evidenceQuantities(value: string): Array<Set<number>> {
+  return EVIDENCE_ENTITY_PATTERNS.map((pattern) => {
+    const quantities = new Set<number>();
+    pattern.lastIndex = 0;
+    for (const match of value.matchAll(pattern)) {
+      const token = match[1].toLowerCase();
+      const quantity = /^\d+$/.test(token) ? Number(token) : QUANTITY_WORDS[token];
+      if (Number.isFinite(quantity)) quantities.add(quantity);
+    }
+    return quantities;
+  });
+}
+
+function hasConflictingEvidenceQuantities(candidate: RawNewsCandidate): boolean {
+  if (!candidate.source_description) return false;
+  const headlineQuantities = evidenceQuantities(candidate.headline);
+  const descriptionQuantities = evidenceQuantities(candidate.source_description);
+
+  return headlineQuantities.some((headlineValues, index) => {
+    const descriptionValues = descriptionQuantities[index];
+    if (headlineValues.size === 0 || descriptionValues.size === 0) return false;
+    return !Array.from(headlineValues).some((value) => descriptionValues.has(value));
+  });
+}
+
 export function shouldPublishCandidate(candidate: ClassifiedNewsCandidate, targetDate: string): { publishable: boolean; reason?: string } {
   if (candidate.publish_mode !== "auto") return { publishable: false, reason: `source mode is ${candidate.publish_mode}` };
   if (!isDirectSourceUrl(candidate.canonical_url)) return { publishable: false, reason: "missing direct source URL" };
   if (isObituaryCandidate(candidate)) return { publishable: false, reason: "obituary notices are not public news" };
+  if (hasConflictingEvidenceQuantities(candidate)) return { publishable: false, reason: "conflicting quantities in source evidence" };
   if (!candidate.ibiza_maps_relevant) return { publishable: false, reason: "missing Ibiza-local relevance signal" };
   if (!isFreshForTarget(candidate, targetDate)) return { publishable: false, reason: "not fresh for target date" };
   if (!candidate.headline || candidate.headline.length < 8) return { publishable: false, reason: "headline missing or too short" };

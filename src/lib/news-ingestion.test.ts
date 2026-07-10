@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  canonicalAreaKeys,
   calculateCurationScore,
   classifyCandidate,
   extractFeedCandidates,
   isDirectSourceUrl,
+  normalizePublicSourceLabel,
   shouldPublishCandidate,
   type NewsSourceConfig,
   type RawNewsCandidate,
@@ -19,6 +21,67 @@ const rssSource: NewsSourceConfig = {
 };
 
 describe("Ibiza news ingestion helpers", () => {
+  it("emits stable canonical area keys for official and legacy municipality labels", () => {
+    expect(canonicalAreaKeys(["Ibiza Town", "Sant Antoni de Portmany", "Formentera"])).toEqual([
+      "eivissa",
+      "sant-antoni-de-portmany",
+      "formentera",
+    ]);
+    expect(canonicalAreaKeys(["Santa Eulària", "San José", "Sant Joan"])).toEqual([
+      "santa-eularia-des-riu",
+      "sant-josep-de-sa-talaia",
+      "sant-joan-de-labritja",
+    ]);
+  });
+
+  it("normalizes technical feed names to public publisher labels", () => {
+    expect(normalizePublicSourceLabel("Diario de Ibiza RSS")).toBe("Diario de Ibiza");
+    expect(normalizePublicSourceLabel("Periódico de Ibiza y Formentera — Pitiusas")).toBe(
+      "Periódico de Ibiza y Formentera",
+    );
+    expect(normalizePublicSourceLabel("La Voz de Ibiza RSS")).toBe("La Voz de Ibiza");
+  });
+
+  it("classifies missing-person searches as Public Safety rather than Weather Alert", () => {
+    const raw: RawNewsCandidate = {
+      source_key: "diario-general-rss",
+      source_name: "Diario de Ibiza RSS",
+      source_type: "rss",
+      publish_mode: "auto",
+      source_url: "https://www.diariodeibiza.es/rss/",
+      canonical_url: "https://www.diariodeibiza.es/ibiza/2026/07/10/alerta-desaparicion-nina-ibiza-132315632.html",
+      headline: "Alerta por la desaparición de una niña en Ibiza: intensa búsqueda con perros y drones de madrugada",
+      source_description: "Bomberos de Ibiza localizaron a la niña tras activar una búsqueda en Santa Eulària.",
+      published_at: "2026-07-10T06:30:00.000Z",
+      language: "es",
+      raw_metadata: {},
+    };
+
+    expect(classifyCandidate(raw, rssSource).category).toBe("Public Safety");
+  });
+
+  it("rejects conflicting people counts between source headline and source description", () => {
+    const raw: RawNewsCandidate = {
+      source_key: "diario-general-rss",
+      source_name: "Diario de Ibiza RSS",
+      source_type: "rss",
+      publish_mode: "auto",
+      source_url: "https://www.diariodeibiza.es/rss/",
+      canonical_url: "https://www.diariodeibiza.es/ibiza/2026/07/10/interceptadas-siete-migrantes-nueva-patera-formentera-132314844.html",
+      headline: "Interceptadas 14 personas migrantes en una nueva patera en Formentera",
+      source_description: "La Guardia Civil interceptó siete personas de origen norteafricano en es Caló.",
+      published_at: "2026-07-10T06:20:00.000Z",
+      language: "es",
+      raw_metadata: {},
+    };
+
+    const classified = classifyCandidate(raw, rssSource);
+    expect(shouldPublishCandidate(classified, "2026-07-10")).toEqual({
+      publishable: false,
+      reason: "conflicting quantities in source evidence",
+    });
+  });
+
   it("extracts direct RSS candidates without storing article bodies", () => {
     const candidates = extractFeedCandidates(
       `
