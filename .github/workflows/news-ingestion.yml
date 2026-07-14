@@ -118,8 +118,13 @@ jobs:
 
           const defaultBatches = [
             {
+              label: "formentera-media",
+              maxAiSummaries: 3,
+              sourceKeys: ["radio-illa-actualitat-rss"],
+            },
+            {
               label: "core-media",
-              maxAiSummaries: 8,
+              maxAiSummaries: 5,
               sourceKeys: [
                 "diario-general-rss",
                 "periodico-pitiusas-atom",
@@ -144,8 +149,11 @@ jobs:
             },
           ];
 
+          const customMaxAiSummaries = sourceKeys.length === 1 && sourceKeys[0] === "radio-illa-actualitat-rss"
+            ? 3
+            : basePayload.max_ai_summaries;
           const batches = sourceKeys.length > 0
-            ? [{ label: "custom-source-keys", maxAiSummaries: basePayload.max_ai_summaries, sourceKeys }]
+            ? [{ label: "custom-source-keys", maxAiSummaries: customMaxAiSummaries, sourceKeys }]
             : defaultBatches;
 
           const invokeCollector = async (batch) => {

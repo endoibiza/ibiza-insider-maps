@@ -62,13 +62,13 @@ const DIRECT_URL_BLOCKLIST = new Set([
 ]);
 
 const CATEGORY_KEYWORDS: Array<[string, RegExp]> = [
-  ["Public Safety", /\b(emergency|112|fire|incendio|bomberos|police|policia|polic[ií]a|guardia civil|rescue|rescat|safety|seguridad|socorrista|missing person|missing child|disappearance|desaparecid[oa]s?|desaparici[oó]n|b[uú]squeda|search (?:operation|effort|party))\b/i],
-  ["Weather Alert", /\b(aemet|weather|storm|rain|wind|alerta|aviso|meteo|temporal|calor|heat)\b/i],
-  ["Transport", /\b(airport|aeropuerto|flight|ferry|bus|taxi|traffic|transport|road|carretera|port|puerto|parking)\b/i],
+  ["Public Safety", /\b(112|fire|incendi|incendio|bombers|bomberos|police|policia|polic[ií]a|gu[aà]rdia civil|guardia civil|rescue|rescat|recerca|safety|seguretat|seguridad|socorrista|missing person|missing child|disappearance|desaparegut[sd]?|desaparegid[oa]s?|desaparici[oó]n|b[uú]squeda|search (?:operation|effort|party))\b/i],
+  ["Weather Alert", /\b(aemet|weather|storm|rain|pluja|wind|vent|alerta|av[ií]s|aviso|meteo|temporal|calor|heat)\b/i],
+  ["Transport", /\b(airport|aeroport|aeropuerto|flight|vols?|ferry|ferris?|bus|taxi|traffic|tr[aà]nsit|transport|road|carretera|port|puerto|parking|aparcament)\b/i],
   ["Crime", /\b(arrest|detenido|detenida|robbery|theft|drug|droga|crime|delito|court|tribunal|prison|violencia|agresi[oó]n)\b/i],
-  ["Government", /\b(council|consell|govern|gobierno|ministros|ayuntamiento|ajuntament|plen[oa]|mayor|alcald|councillor|municipal)\b/i],
-  ["Infrastructure", /\b(works|obras|roadworks|water|agua|sewer|electric|power|construction|vivienda|housing)\b/i],
-  ["Environment", /\b(environment|medio ambiente|sea|mar|beach|playa|posidonia|waste|residuos|climate|biodiversity)\b/i],
+  ["Government", /\b(council|consell|govern|govern balear|gobierno|ministres?|ministros|senador[ae]?|ayuntamiento|ajuntament|plen[oa]|mayor|alcald[ei]?|councillor|regidor[ae]?|municipal)\b/i],
+  ["Infrastructure", /\b(works|obres|obras|roadworks|water|aigua|agua|sewer|clavegueram|electric|el[eè]ctric|power|construction|construcci[oó]|vivienda|habitatge|housing)\b/i],
+  ["Environment", /\b(environment|medi ambient|medio ambiente|protecci[oó] ambiental|sea|mar|beach|platja|playa|posidonia|posid[oò]nia|waste|residus|residuos|climate|clima|biodiversity|biodiversitat)\b/i],
   ["Business", /\b(opening|opens|abierto|apertura|restaurant|restaurante|hotel|business|negocio|empresa|comercio|venue|kebab|food|gastronom)\b/i],
   ["Tourism", /\b(tourism|turismo|tourist|visitor|hotel|season|temporada|cruise|travel|qu[eé] hacer|places|lugares)\b/i],
   ["Culture", /\b(culture|cultura|music|musica|festival|concert|cine|theatre|teatro|exhibition|exposici[oó]n|misa|artesanal|tradici[oó]n|producto local)\b/i],
@@ -402,14 +402,20 @@ function classifyCategory(candidate: RawNewsCandidate): string {
   return "Other";
 }
 
+function matchedAreas(value: string): string[] {
+  return AREA_KEYWORDS.filter(([, pattern]) => pattern.test(value)).map(([area]) => area);
+}
+
 function classifyArea(candidate: RawNewsCandidate, source: NewsSourceConfig): string[] {
   const path = candidate.canonical_url ? new URL(candidate.canonical_url).pathname.replace(/[-_/]+/g, " ") : "";
-  const haystack = `${candidate.headline} ${candidate.source_description ?? ""} ${path}`;
-  const areas = AREA_KEYWORDS.filter(([, pattern]) => pattern.test(haystack)).map(([area]) => area);
-  const localSignalHaystack = removePublisherBoilerplate(haystack);
-  if (IBIZA_CONTEXT_PATTERN.test(localSignalHaystack)) {
+  const strongHaystack = removePublisherBoilerplate(`${candidate.headline} ${path}`);
+  const fallbackHaystack = removePublisherBoilerplate(`${candidate.headline} ${candidate.source_description ?? ""} ${path}`);
+  const strongAreas = matchedAreas(strongHaystack);
+  const areaHaystack = strongAreas.length > 0 ? strongHaystack : fallbackHaystack;
+  const areas = strongAreas.length > 0 ? strongAreas : matchedAreas(fallbackHaystack);
+  if (IBIZA_CONTEXT_PATTERN.test(areaHaystack)) {
     for (const [area, pattern] of AMBIGUOUS_AREA_KEYWORDS) {
-      if (pattern.test(haystack)) areas.push(area);
+      if (pattern.test(areaHaystack)) areas.push(area);
     }
   }
   if (areas.length > 0) return Array.from(new Set(areas));
