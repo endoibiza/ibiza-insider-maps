@@ -506,6 +506,7 @@ export function classifyCandidate(candidate: RawNewsCandidate, source: NewsSourc
 
   return {
     ...candidate,
+    publish_mode: sourcePublishMode(source),
     summary_seed: summarySeed,
     category,
     area,

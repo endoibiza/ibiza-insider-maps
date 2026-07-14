@@ -73,6 +73,35 @@ describe("Ibiza news ingestion helpers", () => {
     expect(classified.category).toBe("Infrastructure");
   });
 
+  it("promotes a resolved signal candidate to the resolved source publish mode", () => {
+    const raw: RawNewsCandidate = {
+      source_key: "radio-illa-actualitat-rss",
+      source_name: "Ràdio Illa Formentera",
+      source_type: "rss",
+      publish_mode: "signal_only",
+      source_url: "https://www.radioillaformentera.cat/category/actualitat/feed/",
+      canonical_url: "https://www.radioillaformentera.cat/conclou-la-recerca/",
+      headline: "Conclou la recerca al sud de Formentera",
+      source_description: "La recerca va finalitzar després de tres dies.",
+      published_at: "2026-07-14T08:00:00.000Z",
+      language: "ca",
+      raw_metadata: {},
+    };
+
+    const classified = classifyCandidate(raw, {
+      source_key: raw.source_key,
+      source_name: raw.source_name,
+      source_type: "rss",
+      source_url: raw.source_url,
+      default_language: "ca",
+      default_area: ["Formentera"],
+      source_scope: "local",
+      publish_mode: "auto",
+    });
+
+    expect(classified.publish_mode).toBe("auto");
+  });
+
   it("does not infer Formentera from a publisher name in an Ibiza-only description", () => {
     const raw: RawNewsCandidate = {
       source_key: "periodico-ibiza-atom",
