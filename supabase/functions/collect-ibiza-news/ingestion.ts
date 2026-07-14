@@ -124,6 +124,16 @@ export function normalizePublicSourceLabel(value: string): string {
   return normalized.replace(/\s+RSS$/i, "").trim();
 }
 
+export function newsSourceKind(
+  sourceKey: string,
+  rawMetadata: Record<string, unknown> | null | undefined,
+): NonNullable<NewsSourceConfig["source_kind"]> {
+  if (sourceKey === "ibiza-spotlight-magazine") return "discovery_only";
+  if (rawMetadata?.source_kind === "verified_media") return "verified_media";
+  if (rawMetadata?.official === true || Boolean(rawMetadata?.municipality)) return "official_source";
+  return "verified_media";
+}
+
 function removePublisherBoilerplate(value: string): string {
   return decodeHtml(value)
     .replace(/\b(la voz de ibiza|diario de ibiza|per[ií]odico de ibiza(?: y formentera)?|r[aà]dio illa(?: formentera)?|radioilla(?: not[ií]cies)? formentera)\b/gi, " ")

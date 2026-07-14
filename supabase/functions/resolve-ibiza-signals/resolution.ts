@@ -94,7 +94,7 @@ const MUNICIPALITY_RULES: Array<[string, RegExp]> = [
 ];
 
 const EVENT_PATTERN = /\b(event|esdeveniment|evento|agenda|festival|concert|concierto|party|festa|fiesta|lineup|cartell|cartel|tickets?|entradas|residency|opening party|closing party|show|actuaci[oó]|exhibition|exposici[oó])\b/i;
-const OPENING_OR_ANNOUNCEMENT_PATTERN = /\b(opening|opens?|inaugura|apertura|announces?|anuncia|launches?|llan[çc]a|presenta|programme|programa|schedule|horari|horario)\b/i;
+const OPENING_OR_ANNOUNCEMENT_PATTERN = /\b(opening|opens?|inaugura|apertura|announces?|anuncia|launches?|llan[çc]a|presenta|programme|programa|schedule|horari|horario|press release|nota de premsa|rejects?|rebutja|demands?|reclama)\b/i;
 
 const normalize = (value: string) => value
   .normalize("NFD")

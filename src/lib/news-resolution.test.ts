@@ -149,6 +149,23 @@ describe("primary-source resolution", () => {
     expect(decision.canonicalUrl).toBeNull();
   });
 
+  it("holds an institution's press-release position until owner evidence is resolved", () => {
+    const decision = resolveSignal(signal({
+      source_key: "radio-illa-actualitat-rss",
+      source_label: "Ràdio Illa Formentera",
+      source_url: "https://www.radioillaformentera.cat/arquitectes-rebutgen-ampliacio/",
+      source_domain: "radioillaformentera.cat",
+      local_source_scope: true,
+      title: "El Col·legi d'Arquitectes rebutja l'ampliació de l'aeroport",
+      summary: "En una nota de premsa, el col·legi reclama que no augmenti la capacitat.",
+      category: "transport_public_safety",
+    }), [], []);
+
+    expect(decision.linkStatus).toBe("suggested");
+    expect(decision.resolutionStatus).toBe("review_required");
+    expect(decision.canonicalUrl).toBeNull();
+  });
+
   it("does not publish a government announcement without primary evidence", () => {
     const decision = resolveSignal(signal({
       title: "Council announces new housing programme in Eivissa",
