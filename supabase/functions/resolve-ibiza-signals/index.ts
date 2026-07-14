@@ -158,6 +158,7 @@ serve(async (req) => {
           canonical_eligible: source.canonical_eligible,
           allow_publisher_original: source.allow_publisher_original,
           require_local_signal: source.require_local_signal,
+          local_source_scope: Boolean(source.raw_metadata?.municipality),
           require_primary_resolution: source.require_primary_resolution,
           public_link_policy: source.public_link_policy,
           content_deny_patterns: source.content_deny_patterns ?? [],

@@ -42,6 +42,94 @@ describe("Ibiza news ingestion helpers", () => {
     expect(normalizePublicSourceLabel("La Voz de Ibiza RSS")).toBe("La Voz de Ibiza");
   });
 
+  it("uses Radio Illa's Formentera source scope when an article has no stronger area", () => {
+    const raw: RawNewsCandidate = {
+      source_key: "radio-illa-actualitat-rss",
+      source_name: "Ràdio Illa Formentera",
+      source_type: "rss",
+      publish_mode: "auto",
+      source_url: "https://www.radioillaformentera.cat/category/actualitat/feed/",
+      canonical_url: "https://www.radioillaformentera.cat/habitatge-emergencia-social/",
+      headline: "L'habitatge ja és una emergència social",
+      source_description: "Una entrevista sobre els problemes que afecten els residents de l'illa.",
+      published_at: "2026-07-14T08:00:00.000Z",
+      language: "ca",
+      raw_metadata: {},
+    };
+    const source: NewsSourceConfig = {
+      source_key: raw.source_key,
+      source_name: raw.source_name,
+      source_type: "rss",
+      source_url: raw.source_url,
+      default_language: "ca",
+      default_area: ["Formentera"],
+      source_scope: "local",
+      publish_mode: "auto",
+    };
+
+    const classified = classifyCandidate(raw, source);
+    expect(classified.area_keys).toEqual(["formentera"]);
+    expect(classified.primary_area).toBe("Formentera");
+    expect(classified.category).toBe("Infrastructure");
+  });
+
+  it("does not infer Formentera from a publisher name in an Ibiza-only description", () => {
+    const raw: RawNewsCandidate = {
+      source_key: "periodico-ibiza-atom",
+      source_name: "Periódico de Ibiza y Formentera",
+      source_type: "atom",
+      publish_mode: "auto",
+      source_url: "https://www.periodicodeibiza.es/pitiusas/ibiza.rss",
+      canonical_url: "https://www.periodicodeibiza.es/pitiusas/ibiza/2026/07/12/platges-comte-vertido.html",
+      headline: "Prohibido bañarse en una playa de Sant Josep por un vertido",
+      source_description: "La alerta fue comunicada a Periódico de Ibiza y Formentera.",
+      published_at: "2026-07-12T08:00:00.000Z",
+      language: "es",
+      raw_metadata: {},
+    };
+
+    expect(classifyCandidate(raw, { ...rssSource, source_key: raw.source_key, source_name: raw.source_name }).area_keys)
+      .toEqual(["sant-josep-de-sa-talaia"]);
+  });
+
+  it("does not infer Formentera from a patron reference when the headline names Sant Miquel", () => {
+    const raw: RawNewsCandidate = {
+      source_key: "periodico-ibiza-atom",
+      source_name: "Periódico de Ibiza y Formentera",
+      source_type: "atom",
+      publish_mode: "auto",
+      source_url: "https://www.periodicodeibiza.es/pitiusas/ibiza.rss",
+      canonical_url: "https://www.periodicodeibiza.es/pitiusas/aldia/2026/07/09/sant-miquel-procesion.html",
+      headline: "Sant Miquel recibirá la imagen peregrina de Santa Maria de les Neus",
+      source_description: "La patrona de Ibiza y Formentera llegará en una solemne procesión.",
+      published_at: "2026-07-09T08:00:00.000Z",
+      language: "es",
+      raw_metadata: {},
+    };
+
+    expect(classifyCandidate(raw, { ...rssSource, source_key: raw.source_key, source_name: raw.source_name }).area_keys)
+      .toEqual(["sant-joan-de-labritja"]);
+  });
+
+  it("keeps Formentera on a genuine multi-island heat alert", () => {
+    const raw: RawNewsCandidate = {
+      source_key: "periodico-ibiza-atom",
+      source_name: "Periódico de Ibiza y Formentera",
+      source_type: "atom",
+      publish_mode: "auto",
+      source_url: "https://www.periodicodeibiza.es/pitiusas/ibiza.rss",
+      canonical_url: "https://www.periodicodeibiza.es/pitiusas/ibiza/2026/07/10/alerta-calor.html",
+      headline: "Sant Joan, Sant Antoni and Formentera remain under a heat alert",
+      source_description: "AEMET recorded high temperatures across the islands.",
+      published_at: "2026-07-10T08:00:00.000Z",
+      language: "en",
+      raw_metadata: {},
+    };
+
+    expect(classifyCandidate(raw, { ...rssSource, source_key: raw.source_key, source_name: raw.source_name }).area_keys)
+      .toEqual(["sant-antoni-de-portmany", "sant-joan-de-labritja", "formentera"]);
+  });
+
   it("classifies missing-person searches as Public Safety rather than Weather Alert", () => {
     const raw: RawNewsCandidate = {
       source_key: "diario-general-rss",

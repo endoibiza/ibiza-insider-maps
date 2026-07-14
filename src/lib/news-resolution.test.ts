@@ -115,6 +115,40 @@ describe("primary-source resolution", () => {
     expect(decision.canonicalUrl).toBe("https://publisher.example/ibiza/fire-sant-josep");
   });
 
+  it("does not treat a Radio Illa WordPress footer as an event", () => {
+    const decision = resolveSignal(signal({
+      source_key: "radio-illa-actualitat-rss",
+      source_label: "Ràdio Illa Formentera",
+      source_url: "https://www.radioillaformentera.cat/migrants-desapareguts/",
+      source_domain: "radioillaformentera.cat",
+      local_source_scope: true,
+      title: "Conclou la recerca dels migrants desapareguts al sud de Formentera",
+      summary: "La recerca va finalitzar sense èxit. La entrada Conclou la recerca se publicó primero en RadioIlla Notícies Formentera.",
+      category: "transport_public_safety",
+    }), [], []);
+
+    expect(decision.targetType).toBe("news_review");
+    expect(decision.resolutionStatus).toBe("publisher_original");
+    expect(decision.canonicalUrl).toContain("radioillaformentera.cat");
+  });
+
+  it("holds a Catalan institutional launch until primary evidence is resolved", () => {
+    const decision = resolveSignal(signal({
+      source_key: "radio-illa-actualitat-rss",
+      source_label: "Ràdio Illa Formentera",
+      source_url: "https://www.radioillaformentera.cat/ieb-llanca-iniciativa/",
+      source_domain: "radioillaformentera.cat",
+      local_source_scope: true,
+      title: "L'IEB llança una iniciativa per fomentar l'ús social del català",
+      summary: "L'Institut d'Estudis Baleàrics presenta el nou projecte.",
+      category: "local_breaking_news",
+    }), [], []);
+
+    expect(decision.linkStatus).toBe("suggested");
+    expect(decision.resolutionStatus).toBe("review_required");
+    expect(decision.canonicalUrl).toBeNull();
+  });
+
   it("does not publish a government announcement without primary evidence", () => {
     const decision = resolveSignal(signal({
       title: "Council announces new housing programme in Eivissa",

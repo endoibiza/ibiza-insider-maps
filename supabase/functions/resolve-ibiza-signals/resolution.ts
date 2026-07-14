@@ -33,6 +33,7 @@ export type ResolutionSignal = {
   canonical_eligible: boolean;
   allow_publisher_original: boolean;
   require_local_signal: boolean;
+  local_source_scope?: boolean;
   require_primary_resolution: boolean;
   public_link_policy: "primary_only" | "publisher_allowed" | "never";
   content_deny_patterns?: string[];
@@ -92,8 +93,8 @@ const MUNICIPALITY_RULES: Array<[string, RegExp]> = [
   ["formentera", /\b(formentera|la savina|sant francesc|es pujols|el pilar de la mola)\b/i],
 ];
 
-const EVENT_PATTERN = /\b(event|evento|agenda|festival|concert|concierto|party|fiesta|lineup|cartel|tickets?|entradas?|residency|opening party|closing party|show|actuaci[oó]n|exhibition|exposici[oó]n)\b/i;
-const OPENING_OR_ANNOUNCEMENT_PATTERN = /\b(opening|opens?|inaugura|apertura|announces?|anuncia|launches?|presenta|programme|programa|schedule|horario)\b/i;
+const EVENT_PATTERN = /\b(event|esdeveniment|evento|agenda|festival|concert|concierto|party|festa|fiesta|lineup|cartell|cartel|tickets?|entradas|residency|opening party|closing party|show|actuaci[oó]|exhibition|exposici[oó])\b/i;
+const OPENING_OR_ANNOUNCEMENT_PATTERN = /\b(opening|opens?|inaugura|apertura|announces?|anuncia|launches?|llan[çc]a|presenta|programme|programa|schedule|horari|horario)\b/i;
 
 const normalize = (value: string) => value
   .normalize("NFD")
@@ -212,7 +213,10 @@ export const scoreIncidentSimilarity = (
 
 export const isEventSignal = (signal: Pick<ResolutionSignal, "title" | "summary" | "category">) => {
   if (signal.category === "events_lineup_changes") return true;
-  return EVENT_PATTERN.test(`${signal.title} ${signal.summary}`);
+  const searchText = `${signal.title} ${signal.summary}`
+    .replace(/&(?:#\d+|#x[a-f0-9]+|[a-z]+);/gi, " ")
+    .replace(/\b(?:la entrada|the entry)\b[\s\S]*?\b(?:se public[oó] primero en|published first (?:on|in))\b/gi, " ");
+  return EVENT_PATTERN.test(searchText);
 };
 
 export const requiresPrimaryEvidence = (signal: Pick<ResolutionSignal, "title" | "summary" | "category" | "require_primary_resolution">) => {
@@ -307,6 +311,7 @@ export const resolveSignal = (
 
   if (
     signal.require_local_signal &&
+    !signal.local_source_scope &&
     !["official_source", "official_account", "owner_source"].includes(signal.source_kind) &&
     !hasIbizaLocalSignal(`${signal.title} ${signal.summary}`)
   ) {
