@@ -102,6 +102,51 @@ describe("Ibiza news ingestion helpers", () => {
     expect(classified.publish_mode).toBe("auto");
   });
 
+  it("strips the Radio Illa WordPress footer before storing feed evidence", () => {
+    const xml = `
+      <rss><channel><item>
+        <title>Conclou la recerca al sud de Formentera</title>
+        <link>https://www.radioillaformentera.cat/conclou-la-recerca/</link>
+        <description><![CDATA[La recerca va finalitzar després de tres dies. La entrada Conclou la recerca se publicó primero en RadioIlla Notícies Formentera.]]></description>
+        <pubDate>Tue, 14 Jul 2026 08:00:00 GMT</pubDate>
+      </item></channel></rss>
+    `;
+    const [candidate] = extractFeedCandidates(xml, {
+      ...rssSource,
+      source_key: "radio-illa-actualitat-rss",
+      source_name: "Ràdio Illa Formentera",
+      source_url: "https://www.radioillaformentera.cat/category/actualitat/feed/",
+      default_language: "ca",
+      default_area: ["Formentera"],
+    });
+
+    expect(candidate.source_description).toBe("La recerca va finalitzar després de tres dies.");
+  });
+
+  it("does not classify a social-policy warning as a weather alert", () => {
+    const raw: RawNewsCandidate = {
+      source_key: "radio-illa-actualitat-rss",
+      source_name: "Ràdio Illa Formentera",
+      source_type: "rss",
+      publish_mode: "auto",
+      source_url: "https://www.radioillaformentera.cat/category/actualitat/feed/",
+      canonical_url: "https://www.radioillaformentera.cat/caritas-alerta-pobresa-pitiuses/",
+      headline: "Càritas alerta de la cronificació de la pobresa a les Pitiüses",
+      source_description: "L'entitat presenta la seva memòria social a Eivissa i Formentera.",
+      published_at: "2026-07-14T08:00:00.000Z",
+      language: "ca",
+      raw_metadata: {},
+    };
+
+    expect(classifyCandidate(raw, {
+      ...rssSource,
+      source_key: raw.source_key,
+      source_name: raw.source_name,
+      default_language: "ca",
+      default_area: ["Formentera"],
+    }).category).not.toBe("Weather Alert");
+  });
+
   it("does not infer Formentera from a publisher name in an Ibiza-only description", () => {
     const raw: RawNewsCandidate = {
       source_key: "periodico-ibiza-atom",

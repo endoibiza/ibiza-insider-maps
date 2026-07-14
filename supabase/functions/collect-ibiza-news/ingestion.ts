@@ -63,7 +63,7 @@ const DIRECT_URL_BLOCKLIST = new Set([
 
 const CATEGORY_KEYWORDS: Array<[string, RegExp]> = [
   ["Public Safety", /\b(112|fire|incendi|incendio|bombers|bomberos|police|policia|polic[ií]a|gu[aà]rdia civil|guardia civil|rescue|rescat|recerca|safety|seguretat|seguridad|socorrista|missing person|missing child|disappearance|desaparegut[sd]?|desaparegid[oa]s?|desaparici[oó]n|b[uú]squeda|search (?:operation|effort|party))\b/i],
-  ["Weather Alert", /\b(aemet|weather|storm|rain|pluja|wind|vent|alerta|av[ií]s|aviso|meteo|temporal|calor|heat)\b/i],
+  ["Weather Alert", /\b(aemet|weather|storm|rain|pluja|wind|vent|meteo|temporal|calor|heat|(?:alerta|av[ií]s|aviso)\s+(?:meteorol[oò]gic[oa]?|weather|storm|temporal|calor|heat|rain|pluja|wind|vent))\b/i],
   ["Transport", /\b(airport|aeroport|aeropuerto|flight|vols?|ferry|ferris?|bus|taxi|traffic|tr[aà]nsit|transport|road|carretera|port|puerto|parking|aparcament)\b/i],
   ["Crime", /\b(arrest|detenido|detenida|robbery|theft|drug|droga|crime|delito|court|tribunal|prison|violencia|agresi[oó]n)\b/i],
   ["Government", /\b(council|consell|govern|govern balear|gobierno|ministres?|ministros|senador[ae]?|ayuntamiento|ajuntament|plen[oa]|mayor|alcald[ei]?|councillor|regidor[ae]?|municipal)\b/i],
@@ -125,9 +125,16 @@ export function normalizePublicSourceLabel(value: string): string {
 }
 
 function removePublisherBoilerplate(value: string): string {
-  return value
-    .replace(/\b(la voz de ibiza|diario de ibiza|per[ií]odico de ibiza(?: y formentera)?)\b/gi, " ")
+  return decodeHtml(value)
+    .replace(/\b(la voz de ibiza|diario de ibiza|per[ií]odico de ibiza(?: y formentera)?|r[aà]dio illa(?: formentera)?|radioilla(?: not[ií]cies)? formentera)\b/gi, " ")
     .replace(/\b(se public[oó] primero en|published first in|the entry|la entrada)\b/gi, " ");
+}
+
+function removeWordPressFooter(value: string): string {
+  return normalizeWhitespace(value.replace(
+    /\s+(?:la entrada|the entry)\s+[\s\S]*?\s+(?:se public[oó] primero en|was published first (?:on|in)|published first (?:on|in))\s+[^.]*\.?\s*$/i,
+    "",
+  ));
 }
 
 export function normalizeWhitespace(value: string): string {
@@ -270,7 +277,7 @@ export function extractFeedCandidates(xml: string, source: NewsSourceConfig): Ra
         source_url: source.source_url,
         canonical_url: canonicalUrl,
         headline: normalizeWhitespace(title),
-        source_description: rawDescription ? trimSummary(stripHtml(rawDescription), title) : null,
+        source_description: rawDescription ? trimSummary(removeWordPressFooter(stripHtml(rawDescription)), title) : null,
         published_at: publishedAt,
         language: source.default_language || "es",
         raw_metadata: {
@@ -395,7 +402,7 @@ export function extractCandidates(content: string, source: NewsSourceConfig): Ra
 }
 
 function classifyCategory(candidate: RawNewsCandidate): string {
-  const haystack = `${candidate.headline} ${candidate.source_description ?? ""}`;
+  const haystack = removePublisherBoilerplate(`${candidate.headline} ${candidate.source_description ?? ""}`);
   for (const [category, pattern] of CATEGORY_KEYWORDS) {
     if (pattern.test(haystack)) return category;
   }
