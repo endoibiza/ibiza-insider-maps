@@ -16,6 +16,11 @@ import {
   stripHtml,
   targetDateInMadrid,
 } from "./ingestion.ts";
+import {
+  hasEvidenceQuantityConflict,
+  scoreIncidentSimilarity,
+  SignalCategory,
+} from "../resolve-ibiza-signals/resolution.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -31,6 +36,7 @@ type CollectRequest = {
   use_ai?: boolean;
   max_ai_summaries?: number;
   limit_per_source?: number;
+  enforce_primary_resolution?: boolean;
 };
 
 type DatabaseSource = {
@@ -47,7 +53,9 @@ type DatabaseSource = {
   raw_metadata: Record<string, unknown> | null;
 };
 
-type SupabaseClient = ReturnType<typeof createClient>;
+// Supabase Edge Functions do not have generated database types in this repo.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SupabaseClient = ReturnType<typeof createClient<any>>;
 type DigestStory = {
   id: string;
   headline: string;
@@ -55,6 +63,17 @@ type DigestStory = {
   digest_section: string;
   source_url: string;
   curation_score: number;
+};
+
+type ResolutionRecord = {
+  signalItemId: string;
+  canonicalUrl: string | null;
+  canonicalLabel: string | null;
+  canonicalDomain: string | null;
+  canonicalKind: "official_source" | "owner_source" | "publisher_original" | null;
+  resolutionStatus: "unresolved" | "official_resolved" | "owner_resolved" | "publisher_original" | "review_required" | "conflict";
+  confidence: number;
+  incidentFingerprint: string | null;
 };
 
 const CORE_SOURCE_KEYS = new Set(["diario-general-rss", "periodico-pitiusas-atom", "periodico-ibiza-atom", "lavoz-ibiza-rss", "lavoz-general-rss"]);
@@ -121,6 +140,7 @@ const parseRequest = async (req: Request): Promise<Required<CollectRequest>> => 
     use_ai: body.use_ai ?? true,
     max_ai_summaries: Math.max(0, Math.min(body.max_ai_summaries ?? 8, 20)),
     limit_per_source: Math.max(1, Math.min(body.limit_per_source ?? 25, 60)),
+    enforce_primary_resolution: body.enforce_primary_resolution ?? false,
   };
 };
 
@@ -147,6 +167,11 @@ const toSourceConfig = (source: DatabaseSource): NewsSourceConfig | null => {
     default_category: (source.raw_metadata?.default_category as string | undefined) ?? null,
     default_area: municipality ? [MUNICIPAL_AREA_LABELS[municipality] || municipality] : null,
     source_scope: sourceScope,
+    source_kind: source.source_key === "ibiza-spotlight-magazine"
+      ? "discovery_only"
+      : source.raw_metadata?.official === true || Boolean(municipality)
+        ? "official_source"
+        : "verified_media",
   };
 };
 
@@ -501,11 +526,204 @@ const cleanupPublishedStoriesForTargetDate = async (
   return { demoted, normalized };
 };
 
+const addDateDays = (date: string, days: number) => {
+  const value = new Date(`${date}T12:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+};
+
+const signalCategoryForStory = (category: string): SignalCategory => {
+  if (category === "Government") return "government_municipal";
+  if (category === "Weather Alert") return "weather_alert_chatter";
+  if (["Transport", "Public Safety", "Crime"].includes(category)) return "transport_public_safety";
+  if (["Culture", "Tourism", "Business", "Community"].includes(category)) return "tourism_community";
+  return "local_breaking_news";
+};
+
+const requiresPrimaryResolution = (candidate: ClassifiedNewsCandidate) => {
+  if (["Government", "Weather Alert", "Business"].includes(candidate.category)) return true;
+  if (["Culture", "Tourism", "Community"].includes(candidate.category)) {
+    return /\b(event|festival|concert|party|lineup|tickets?|opening|opens?|inaugura|apertura|announces?|anuncia|programme|programa|schedule|horario)\b/i
+      .test(`${candidate.headline} ${candidate.source_description || ""}`);
+  }
+  return false;
+};
+
+const loadResolutionMap = async (supabase: SupabaseClient, targetDate: string) => {
+  const { data: items, error: itemError } = await supabase
+    .from("x_daily_digest_items")
+    .select("id,source_url")
+    .eq("digest_date", targetDate)
+    .limit(600);
+  if (itemError) throw itemError;
+
+  const itemIds = (items ?? []).map((item) => item.id as string);
+  if (itemIds.length === 0) return new Map<string, ResolutionRecord>();
+
+  const { data: links, error: linkError } = await supabase
+    .from("x_signal_links")
+    .select("signal_item_id,verification_source_url,confidence,raw_metadata")
+    .in("signal_item_id", itemIds)
+    .eq("target_type", "news_review")
+    .eq("target_key", `news_review:${targetDate}`)
+    .eq("link_status", "confirmed");
+  if (linkError) throw linkError;
+
+  const itemsById = new Map((items ?? []).map((item) => [item.id as string, canonicalizeUrl(String(item.source_url || ""))]));
+  const resolutions = new Map<string, ResolutionRecord>();
+  for (const link of links ?? []) {
+    const originalUrl = itemsById.get(link.signal_item_id as string);
+    if (!originalUrl) continue;
+    const metadata = (link.raw_metadata || {}) as Record<string, unknown>;
+    resolutions.set(originalUrl, {
+      signalItemId: link.signal_item_id as string,
+      canonicalUrl: canonicalizeUrl(String(link.verification_source_url || "")) || null,
+      canonicalLabel: typeof metadata.canonical_label === "string" ? metadata.canonical_label : null,
+      canonicalDomain: typeof metadata.canonical_domain === "string" ? metadata.canonical_domain : null,
+      canonicalKind: ["official_source", "owner_source", "publisher_original"].includes(String(metadata.canonical_kind))
+        ? metadata.canonical_kind as ResolutionRecord["canonicalKind"]
+        : null,
+      resolutionStatus: ["official_resolved", "owner_resolved", "publisher_original", "review_required", "conflict"].includes(String(metadata.resolution_status))
+        ? metadata.resolution_status as ResolutionRecord["resolutionStatus"]
+        : "unresolved",
+      confidence: Number(link.confidence || 0),
+      incidentFingerprint: typeof metadata.incident_fingerprint === "string" ? metadata.incident_fingerprint : null,
+    });
+  }
+  return resolutions;
+};
+
+const upsertStoryEvidence = async (
+  supabase: SupabaseClient,
+  storyId: string,
+  candidate: ClassifiedNewsCandidate,
+  snapshotId: string | null,
+  evidenceHash: string,
+  resolution: ResolutionRecord | null,
+) => {
+  const originalUrl = canonicalizeUrl(candidate.canonical_url);
+  const canonicalUrl = resolution?.canonicalUrl || originalUrl;
+  if (!originalUrl || !canonicalUrl) return;
+
+  if (originalUrl !== canonicalUrl) {
+    const { error: discoveryError } = await supabase
+      .from("ibiza_news_story_evidence")
+      .upsert({
+        story_id: storyId,
+        signal_item_id: resolution?.signalItemId || null,
+        snapshot_id: snapshotId,
+        source_key: candidate.source_key,
+        source_label: normalizePublicSourceLabel(candidate.source_name),
+        source_url: originalUrl,
+        source_domain: sourceDomain(originalUrl),
+        evidence_role: candidate.source_key.includes("ibiza-spotlight") ? "discovery" : "corroborating",
+        source_kind: candidate.source_key.includes("ibiza-spotlight") ? "discovery_only" : "verified_media",
+        verification_status: "verified",
+        evidence_hash: evidenceHash,
+        source_published_at: candidate.published_at,
+        raw_metadata: { resolution_status: resolution?.resolutionStatus || "unresolved" },
+      }, { onConflict: "story_id,source_url" });
+    if (discoveryError) throw discoveryError;
+  }
+
+  const canonicalKind = resolution?.canonicalKind || "publisher_original";
+  const { data: canonicalEvidence, error: canonicalError } = await supabase
+    .from("ibiza_news_story_evidence")
+    .upsert({
+      story_id: storyId,
+      signal_item_id: resolution?.signalItemId || null,
+      snapshot_id: snapshotId,
+      source_key: candidate.source_key,
+      source_label: resolution?.canonicalLabel || normalizePublicSourceLabel(candidate.source_name),
+      source_url: canonicalUrl,
+      source_domain: resolution?.canonicalDomain || sourceDomain(canonicalUrl),
+      evidence_role: "canonical",
+      source_kind: canonicalKind,
+      verification_status: "verified",
+      evidence_hash: evidenceHash,
+      source_published_at: candidate.published_at,
+      raw_metadata: {
+        resolver_confidence: resolution?.confidence ?? null,
+        incident_fingerprint: resolution?.incidentFingerprint ?? null,
+      },
+    }, { onConflict: "story_id,source_url" })
+    .select("id")
+    .single();
+  if (canonicalError) throw canonicalError;
+
+  const { count, error: countError } = await supabase
+    .from("ibiza_news_story_evidence")
+    .select("id", { count: "exact", head: true })
+    .eq("story_id", storyId)
+    .eq("evidence_role", "corroborating")
+    .eq("verification_status", "verified");
+  if (countError) throw countError;
+
+  const { error: storyError } = await supabase
+    .from("ibiza_news_stories")
+    .update({
+      canonical_evidence_id: canonicalEvidence.id,
+      source_resolution_status: resolution?.resolutionStatus || "publisher_original",
+      corroborating_source_count: count ?? 0,
+      source_url: canonicalUrl,
+      source_label: resolution?.canonicalLabel || normalizePublicSourceLabel(candidate.source_name),
+      source_domain: resolution?.canonicalDomain || sourceDomain(canonicalUrl),
+    })
+    .eq("id", storyId);
+  if (storyError) throw storyError;
+};
+
+const upsertCorroboratingEvidence = async (
+  supabase: SupabaseClient,
+  storyId: string,
+  candidate: ClassifiedNewsCandidate,
+  snapshotId: string | null,
+  evidenceHash: string,
+  resolution: ResolutionRecord | null,
+) => {
+  const evidenceUrl = canonicalizeUrl(candidate.canonical_url);
+  if (!evidenceUrl) return;
+  const { error } = await supabase
+    .from("ibiza_news_story_evidence")
+    .upsert({
+      story_id: storyId,
+      signal_item_id: resolution?.signalItemId || null,
+      snapshot_id: snapshotId,
+      source_key: candidate.source_key,
+      source_label: normalizePublicSourceLabel(candidate.source_name),
+      source_url: evidenceUrl,
+      source_domain: sourceDomain(evidenceUrl),
+      evidence_role: candidate.source_key.includes("ibiza-spotlight") ? "discovery" : "corroborating",
+      source_kind: candidate.source_key.includes("ibiza-spotlight") ? "discovery_only" : "verified_media",
+      verification_status: "verified",
+      evidence_hash: evidenceHash,
+      source_published_at: candidate.published_at,
+      raw_metadata: {
+        duplicate_evidence: true,
+        resolver_confidence: resolution?.confidence ?? null,
+      },
+    }, { onConflict: "story_id,source_url" });
+  if (error) throw error;
+
+  const { count, error: countError } = await supabase
+    .from("ibiza_news_story_evidence")
+    .select("id", { count: "exact", head: true })
+    .eq("story_id", storyId)
+    .eq("evidence_role", "corroborating")
+    .eq("verification_status", "verified");
+  if (countError) throw countError;
+  const { error: storyError } = await supabase
+    .from("ibiza_news_stories")
+    .update({ corroborating_source_count: count ?? 0 })
+    .eq("id", storyId);
+  if (storyError) throw storyError;
+};
+
 const findSemanticDuplicate = async (supabase: SupabaseClient, candidate: ClassifiedNewsCandidate) => {
   const storyDate = candidate.published_at?.slice(0, 10);
   if (!storyDate) return null;
 
-  const { data, error } = await supabase
+  const { data: exact, error: exactError } = await supabase
     .from("ibiza_news_stories")
     .select("id,headline,status")
     .eq("dedupe_key", candidate.dedupe_key)
@@ -514,8 +732,51 @@ const findSemanticDuplicate = async (supabase: SupabaseClient, candidate: Classi
     .limit(1)
     .maybeSingle();
 
+  if (exactError) throw exactError;
+  if (exact) return { match: exact as { id: string; headline: string; status: string }, conflict: false };
+
+  const { data, error } = await supabase
+    .from("ibiza_news_stories")
+    .select("id,headline,original_headline,summary,category,status,published_at,raw_metadata")
+    .gte("story_date", addDateDays(storyDate, -2))
+    .lte("story_date", addDateDays(storyDate, 2))
+    .in("status", ["staged", "published"])
+    .limit(120);
+
   if (error) throw error;
-  return data as { id: string; headline: string; status: string } | null;
+  const comparableCandidate = {
+    title: candidate.headline,
+    summary: candidate.source_description || candidate.summary_seed,
+    category: signalCategoryForStory(candidate.category),
+    source_timestamp: candidate.published_at,
+  };
+
+  let best: { id: string; headline: string; status: string; score: number; conflict: boolean } | null = null;
+  for (const story of data ?? []) {
+    const metadata = (story.raw_metadata || {}) as Record<string, unknown>;
+    const storyTitle = String(story.original_headline || story.headline || "");
+    const storySummary = String(metadata.source_description || story.summary || "");
+    const comparison = {
+      title: storyTitle,
+      summary: storySummary,
+      category: signalCategoryForStory(String(story.category || "Other")),
+      source_timestamp: story.published_at ? String(story.published_at) : null,
+    };
+    const score = scoreIncidentSimilarity(comparableCandidate, comparison);
+    if (score < 58 || (best && score <= best.score)) continue;
+    best = {
+      id: String(story.id),
+      headline: String(story.headline),
+      status: String(story.status),
+      score,
+      conflict: hasEvidenceQuantityConflict(
+        `${comparableCandidate.title} ${comparableCandidate.summary}`,
+        `${comparison.title} ${comparison.summary}`,
+      ),
+    };
+  }
+
+  return best ? { match: best, conflict: best.conflict } : null;
 };
 
 const shouldRejectExistingPublishedStory = (reason?: string) =>
@@ -557,7 +818,8 @@ serve(async (req) => {
     const request = await parseRequest(req);
     const supabaseUrl = getRequiredEnv("SUPABASE_URL");
     const serviceRoleKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
-    supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    supabase = createClient<any>(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
 
     const mode = request.publish && !request.dry_run ? "publish" : request.dry_run ? "dry_run" : "shadow";
 
@@ -573,6 +835,7 @@ serve(async (req) => {
           use_ai: request.use_ai,
           max_ai_summaries: request.max_ai_summaries,
           limit_per_source: request.limit_per_source,
+          enforce_primary_resolution: request.enforce_primary_resolution,
         },
       })
       .select("id")
@@ -597,6 +860,7 @@ serve(async (req) => {
     const sources = (sourceRows as DatabaseSource[]).map(toSourceConfig).filter((source): source is NewsSourceConfig => Boolean(source));
     const sourcesByKey = new Map(sources.map((source) => [source.source_key, source]));
     const selectedCoreCount = sources.filter((source) => CORE_SOURCE_KEYS.has(source.source_key)).length;
+    const resolutionMap = await loadResolutionMap(supabase, request.target_date);
 
     let successfulCoreSources = 0;
     let snapshotsInserted = 0;
@@ -663,9 +927,37 @@ serve(async (req) => {
             continue;
           }
 
-          const classified = classifyCandidate({ ...rawCandidate, canonical_url: canonicalUrl }, source);
+          const storedResolution = resolutionMap.get(canonicalUrl) ?? null;
+          const resolution: ResolutionRecord | null = storedResolution || (source.source_kind === "official_source"
+            ? {
+              signalItemId: "",
+              canonicalUrl,
+              canonicalLabel: normalizePublicSourceLabel(source.source_name),
+              canonicalDomain: sourceDomain(canonicalUrl),
+              canonicalKind: "official_source",
+              resolutionStatus: "official_resolved",
+              confidence: 100,
+              incidentFingerprint: null,
+            }
+            : null);
+          const resolvedSource = resolution?.canonicalUrl &&
+              ["official_resolved", "owner_resolved", "publisher_original"].includes(resolution.resolutionStatus)
+            ? { ...source, publish_mode: "auto" as const }
+            : source;
+          const classified = classifyCandidate({ ...rawCandidate, canonical_url: canonicalUrl }, resolvedSource);
           const evidenceHash = await sha256(classified.evidence_hash_seed);
-          const publishDecision = shouldPublishCandidate(classified, request.target_date);
+          let publishDecision = shouldPublishCandidate(classified, request.target_date);
+          if (source.source_key === "ibiza-spotlight-magazine") {
+            publishDecision = { publishable: false, reason: "discovery-only source cannot be public evidence" };
+          } else if (resolution?.resolutionStatus === "conflict") {
+            publishDecision = { publishable: false, reason: "conflicting primary-source evidence" };
+          } else if (
+            request.enforce_primary_resolution &&
+            requiresPrimaryResolution(classified) &&
+            !["official_resolved", "owner_resolved"].includes(resolution?.resolutionStatus || "")
+          ) {
+            publishDecision = { publishable: false, reason: "primary-source resolution required" };
+          }
           const existingStory = await getExistingStory(supabase, classified.source_key, canonicalUrl);
 
           if (existingStory && request.dry_run) {
@@ -676,6 +968,9 @@ serve(async (req) => {
           const duplicate = existingStory ? null : await findSemanticDuplicate(supabase, classified);
           const isDuplicate = Boolean(duplicate);
           if (isDuplicate) duplicatesSeen += 1;
+          if (duplicate?.conflict) {
+            publishDecision = { publishable: false, reason: "conflicting quantities across source reports" };
+          }
 
           if (!publishDecision.publishable) {
             skippedSources.push({
@@ -730,9 +1025,9 @@ serve(async (req) => {
             snapshot_id: snapshot.id,
             evidence_hash: evidenceHash,
             canonical_url: canonicalUrl,
-            source_url: canonicalUrl,
-            source_label: normalizePublicSourceLabel(classified.source_name),
-            source_domain: sourceDomain(canonicalUrl),
+            source_url: resolution?.canonicalUrl || canonicalUrl,
+            source_label: resolution?.canonicalLabel || normalizePublicSourceLabel(classified.source_name),
+            source_domain: resolution?.canonicalDomain || sourceDomain(resolution?.canonicalUrl || canonicalUrl),
             original_headline: classified.headline,
             headline: summary.headline,
             summary: summary.summary,
@@ -752,7 +1047,8 @@ serve(async (req) => {
             display_language: englishReady ? "en" : null,
             translation_status: summary.translationStatus,
             dedupe_key: classified.dedupe_key,
-            duplicate_of: duplicate?.id ?? null,
+            duplicate_of: duplicate?.match.id ?? null,
+            source_resolution_status: resolution?.resolutionStatus || "publisher_original",
             ai_summary_model: summary.model,
             ai_summary_hash: summary.hash,
             raw_metadata: {
@@ -760,6 +1056,7 @@ serve(async (req) => {
               source_description: classified.source_description,
               source_publish_mode: classified.publish_mode,
               publish_decision: publishDecision,
+              source_resolution: resolution,
               dry_run: request.dry_run,
             },
           };
@@ -785,6 +1082,39 @@ serve(async (req) => {
 
             if (insertError) throw insertError;
             storyRow = inserted;
+          }
+
+          if (!request.dry_run && storyRow) {
+            if (duplicate?.match.id) {
+              if (["official_resolved", "owner_resolved"].includes(resolution?.resolutionStatus || "")) {
+                await upsertStoryEvidence(
+                  supabase,
+                  duplicate.match.id,
+                  classified,
+                  snapshot.id,
+                  evidenceHash,
+                  resolution,
+                );
+              } else {
+                await upsertCorroboratingEvidence(
+                  supabase,
+                  duplicate.match.id,
+                  classified,
+                  snapshot.id,
+                  evidenceHash,
+                  resolution,
+                );
+              }
+            } else {
+              await upsertStoryEvidence(
+                supabase,
+                storyRow.id,
+                classified,
+                snapshot.id,
+                evidenceHash,
+                resolution,
+              );
+            }
           }
 
           if (storyRow?.status === "published" && publishDecision.publishable) {

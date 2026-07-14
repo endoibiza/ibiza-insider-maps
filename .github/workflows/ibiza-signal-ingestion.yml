@@ -90,3 +90,32 @@ jobs:
             throw new Error(`collect-ibiza-signals failed with ${response.status}`);
           }
           NODE
+
+      - name: Resolve signals to primary sources
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          node <<'NODE'
+          const scheduled = process.env.GITHUB_EVENT_NAME === "schedule";
+          const sourceKeys = (process.env.SOURCE_KEYS_INPUT || "")
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean);
+          const payload = {
+            dry_run: scheduled ? false : process.env.DRY_RUN_INPUT !== "false",
+            source_keys: sourceKeys,
+            limit: 300,
+          };
+          if (process.env.TARGET_DATE_INPUT) payload.target_date = process.env.TARGET_DATE_INPUT;
+
+          const response = await fetch(`${process.env.SUPABASE_URL.replace(/\/$/, "")}/functions/v1/resolve-ibiza-signals`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-sync-admin-token": process.env.SYNC_ADMIN_TOKEN,
+            },
+            body: JSON.stringify(payload),
+          });
+          const text = await response.text();
+          console.log(text);
+          if (!response.ok) throw new Error(`resolve-ibiza-signals failed with ${response.status}`);
+          NODE
