@@ -5,6 +5,7 @@ import {
   classifyCandidate,
   extractFeedCandidates,
   isDirectSourceUrl,
+  newsSourceKind,
   normalizePublicSourceLabel,
   shouldPublishCandidate,
   type NewsSourceConfig,
@@ -40,6 +41,16 @@ describe("Ibiza news ingestion helpers", () => {
       "Periódico de Ibiza y Formentera",
     );
     expect(normalizePublicSourceLabel("La Voz de Ibiza RSS")).toBe("La Voz de Ibiza");
+  });
+
+  it("does not treat municipality-scoped media as an official source", () => {
+    expect(newsSourceKind("radio-illa-actualitat-rss", {
+      municipality: "Formentera",
+      source_kind: "verified_media",
+    })).toBe("verified_media");
+    expect(newsSourceKind("santa-eularia-news-rss", {
+      municipality: "Santa Eularia",
+    })).toBe("official_source");
   });
 
   it("uses Radio Illa's Formentera source scope when an article has no stronger area", () => {

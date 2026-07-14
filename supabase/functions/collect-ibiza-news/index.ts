@@ -8,6 +8,7 @@ import {
   ClassifiedNewsCandidate,
   extractCandidates,
   NewsSourceConfig,
+  newsSourceKind,
   normalizePublicSourceLabel,
   normalizeWhitespace,
   RawNewsCandidate,
@@ -167,11 +168,7 @@ const toSourceConfig = (source: DatabaseSource): NewsSourceConfig | null => {
     default_category: (source.raw_metadata?.default_category as string | undefined) ?? null,
     default_area: municipality ? [MUNICIPAL_AREA_LABELS[municipality] || municipality] : null,
     source_scope: sourceScope,
-    source_kind: source.source_key === "ibiza-spotlight-magazine"
-      ? "discovery_only"
-      : source.raw_metadata?.official === true || Boolean(municipality)
-        ? "official_source"
-        : "verified_media",
+    source_kind: newsSourceKind(source.source_key, source.raw_metadata),
   };
 };
 
