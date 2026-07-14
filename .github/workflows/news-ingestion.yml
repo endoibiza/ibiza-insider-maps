@@ -33,6 +33,11 @@ on:
         required: true
         default: "25"
         type: string
+      enforce_primary_resolution:
+        description: "Require official/owner evidence for announcements (enable after shadow acceptance)"
+        required: true
+        default: false
+        type: boolean
 
 concurrency:
   group: ibiza-news-ingestion
@@ -52,6 +57,7 @@ jobs:
       TARGET_DATE_INPUT: ${{ github.event.inputs.target_date || '' }}
       SOURCE_KEYS_INPUT: ${{ github.event.inputs.source_keys || '' }}
       LIMIT_PER_SOURCE_INPUT: ${{ github.event.inputs.limit_per_source || '25' }}
+      ENFORCE_PRIMARY_RESOLUTION_INPUT: ${{ github.event.inputs.enforce_primary_resolution || 'false' }}
     steps:
       - name: Invoke Supabase news collector
         run: |
@@ -78,6 +84,7 @@ jobs:
             use_ai: scheduled ? true : process.env.USE_AI_INPUT !== "false",
             max_ai_summaries: 8,
             limit_per_source: Number(process.env.LIMIT_PER_SOURCE_INPUT || 25),
+            enforce_primary_resolution: scheduled ? false : process.env.ENFORCE_PRIMARY_RESOLUTION_INPUT === "true",
           };
 
           if (process.env.TARGET_DATE_INPUT) basePayload.target_date = process.env.TARGET_DATE_INPUT;
@@ -133,7 +140,6 @@ jobs:
                 "sant-antoni-news-page",
                 "sant-josep-sitemap",
                 "sant-antoni-events-ical",
-                "ibiza-spotlight-magazine",
               ],
             },
           ];
@@ -176,6 +182,23 @@ jobs:
               throw new Error(`collect-ibiza-news batch ${batch.label} failed with ${response.status}`);
             }
           };
+
+          const resolverResponse = await fetch(`${supabaseUrl.replace(/\/$/, "")}/functions/v1/resolve-ibiza-signals`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(serviceRoleKey ? { Authorization: `Bearer ${serviceRoleKey}` } : {}),
+              ...(token ? { "x-sync-admin-token": token } : {}),
+            },
+            body: JSON.stringify({
+              target_date: basePayload.target_date,
+              dry_run: false,
+              limit: 300,
+            }),
+          });
+          const resolverText = await resolverResponse.text();
+          console.log(resolverText);
+          if (!resolverResponse.ok) throw new Error(`resolve-ibiza-signals failed with ${resolverResponse.status}`);
 
           for (const batch of batches) {
             await invokeCollector(batch);

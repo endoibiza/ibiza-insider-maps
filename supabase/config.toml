@@ -21,6 +21,9 @@ verify_jwt = false
 [functions.collect-ibiza-signals]
 verify_jwt = false
 
+[functions.resolve-ibiza-signals]
+verify_jwt = false
+
 [functions.validate-promo-code]
 verify_jwt = false
 

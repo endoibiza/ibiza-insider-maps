@@ -13,6 +13,7 @@ export interface NewsSourceConfig {
   default_language?: string | null;
   publish_mode?: NewsPublishMode | null;
   source_scope?: "local" | "general" | "unknown" | null;
+  source_kind?: "official_source" | "owner_source" | "verified_media" | "discovery_only" | null;
 }
 
 export interface RawNewsCandidate {
