@@ -38,6 +38,7 @@ type CollectRequest = {
   max_ai_summaries?: number;
   limit_per_source?: number;
   enforce_primary_resolution?: boolean;
+  trigger_key?: string;
 };
 
 type DatabaseSource = {
@@ -108,7 +109,7 @@ const constantTimeEqual = (actual: string | null | undefined, expected: string |
   return diff === 0;
 };
 
-const requireAdminAccess = (req: Request) => {
+const requireAdminAccess = async (req: Request, supabase: SupabaseClient) => {
   const expectedToken = Deno.env.get("SYNC_ADMIN_TOKEN") || Deno.env.get("ADMIN_API_KEY");
   const expectedServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!expectedToken && !expectedServiceRoleKey) {
@@ -123,6 +124,16 @@ const requireAdminAccess = (req: Request) => {
     constantTimeEqual(bearerToken, expectedServiceRoleKey)
   ) {
     return;
+  }
+
+  if (actualToken) {
+    const actualHash = await sha256(actualToken);
+    const { data, error } = await supabase
+      .from("x_signal_runtime_config")
+      .select("config_value")
+      .eq("config_key", "news_cron_sync_admin_token_sha256")
+      .maybeSingle();
+    if (!error && data?.config_value === actualHash) return;
   }
 
   throw new Error("Unauthorized sync request");
@@ -142,6 +153,7 @@ const parseRequest = async (req: Request): Promise<Required<CollectRequest>> => 
     max_ai_summaries: Math.max(0, Math.min(body.max_ai_summaries ?? 8, 20)),
     limit_per_source: Math.max(1, Math.min(body.limit_per_source ?? 25, 60)),
     enforce_primary_resolution: body.enforce_primary_resolution ?? false,
+    trigger_key: body.trigger_key ?? "",
   };
 };
 
@@ -811,12 +823,12 @@ serve(async (req) => {
   let supabase: SupabaseClient | null = null;
 
   try {
-    requireAdminAccess(req);
-    const request = await parseRequest(req);
     const supabaseUrl = getRequiredEnv("SUPABASE_URL");
     const serviceRoleKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     supabase = createClient<any>(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
+    await requireAdminAccess(req, supabase);
+    const request = await parseRequest(req);
 
     const mode = request.publish && !request.dry_run ? "publish" : request.dry_run ? "dry_run" : "shadow";
 
@@ -833,6 +845,7 @@ serve(async (req) => {
           max_ai_summaries: request.max_ai_summaries,
           limit_per_source: request.limit_per_source,
           enforce_primary_resolution: request.enforce_primary_resolution,
+          trigger_key: request.trigger_key || null,
         },
       })
       .select("id")
@@ -1230,6 +1243,7 @@ serve(async (req) => {
           ai_summaries_used: aiSummariesUsed,
           cleanup_demoted: cleanupDemoted,
           cleanup_normalized: cleanupNormalized,
+          trigger_key: request.trigger_key || null,
         },
       })
       .eq("id", runId);

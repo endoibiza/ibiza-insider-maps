@@ -8,7 +8,7 @@ import {
   resolveSignal,
   SignalCategory,
 } from "./resolution.ts";
-import { targetDateInMadrid } from "../collect-ibiza-news/ingestion.ts";
+import { sha256, targetDateInMadrid } from "../collect-ibiza-news/ingestion.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -20,6 +20,7 @@ type ResolveRequest = {
   dry_run?: boolean;
   source_keys?: string[];
   limit?: number;
+  trigger_key?: string;
 };
 
 type SignalItemRow = {
@@ -72,14 +73,24 @@ const constantTimeEqual = (actual: string | null | undefined, expected: string |
   return diff === 0;
 };
 
-const requireAdminAccess = (req: Request) => {
+const requireAdminAccess = async (req: Request, supabase: SupabaseClient) => {
   const expectedToken = Deno.env.get("SYNC_ADMIN_TOKEN") || Deno.env.get("ADMIN_API_KEY");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const suppliedToken = req.headers.get("x-sync-admin-token") || req.headers.get("x-sync-secret");
   const bearer = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim();
-  if (!constantTimeEqual(suppliedToken, expectedToken) && !constantTimeEqual(bearer, serviceRoleKey)) {
-    throw new Error("Unauthorized sync request");
+  if (constantTimeEqual(suppliedToken, expectedToken) || constantTimeEqual(bearer, serviceRoleKey)) return;
+
+  if (suppliedToken) {
+    const suppliedHash = await sha256(suppliedToken);
+    const { data, error } = await supabase
+      .from("x_signal_runtime_config")
+      .select("config_value")
+      .eq("config_key", "news_cron_sync_admin_token_sha256")
+      .maybeSingle();
+    if (!error && data?.config_value === suppliedHash) return;
   }
+
+  throw new Error("Unauthorized sync request");
 };
 
 const addDays = (date: string, days: number) => {
@@ -103,6 +114,7 @@ const parseRequest = async (req: Request) => {
     dryRun: body.dry_run ?? true,
     sourceKeys: body.source_keys ?? [],
     limit: Math.max(1, Math.min(body.limit ?? 300, 600)),
+    triggerKey: body.trigger_key ?? null,
   };
 };
 
@@ -113,19 +125,23 @@ serve(async (req) => {
   let supabase: SupabaseClient | null = null;
 
   try {
-    requireAdminAccess(req);
-    const request = await parseRequest(req);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     supabase = createClient<any>(getRequiredEnv("SUPABASE_URL"), getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"), {
       auth: { persistSession: false },
     });
+    await requireAdminAccess(req, supabase);
+    const request = await parseRequest(req);
 
     const { data: run, error: runError } = await supabase
       .from("news_resolution_runs")
       .insert({
         target_date: request.targetDate,
         mode: request.dryRun ? "dry_run" : "resolve",
-        metadata: { source_keys: request.sourceKeys, limit: request.limit },
+        metadata: {
+          source_keys: request.sourceKeys,
+          limit: request.limit,
+          trigger_key: request.triggerKey,
+        },
       })
       .select("id")
       .single();
