@@ -35,9 +35,6 @@ on:
         options:
           - "true"
           - "false"
-  schedule:
-    # Daily cloud heartbeat. In summer this is 06:35 Europe/Madrid.
-    - cron: "35 4 * * *"
 
 jobs:
   maintenance:
