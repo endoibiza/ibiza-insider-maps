@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const migrationPath = path.resolve(
   process.cwd(),
-  "supabase/migrations/20260731133000_diario_official_feeds_and_news_monitoring.sql",
+  "supabase/migrations/20260731130524_diario_official_feeds_and_news_monitoring.sql",
 );
 const migration = fs.readFileSync(migrationPath, "utf8");
 const collector = fs.readFileSync(
