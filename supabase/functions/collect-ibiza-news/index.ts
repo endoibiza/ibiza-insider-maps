@@ -64,6 +64,8 @@ type DigestStory = {
   summary: string;
   digest_section: string;
   source_url: string;
+  source_domain: string;
+  source_label: string;
   curation_score: number;
 };
 
@@ -78,7 +80,16 @@ type ResolutionRecord = {
   incidentFingerprint: string | null;
 };
 
-const CORE_SOURCE_KEYS = new Set(["diario-general-rss", "periodico-pitiusas-atom", "periodico-ibiza-atom", "lavoz-ibiza-rss", "lavoz-general-rss"]);
+const CORE_SOURCE_KEYS = new Set([
+  "diario-ibiza-rss",
+  "diario-ibiza-news-en-rss",
+  "diario-formentera-rss",
+  "diario-santa-eularia-rss",
+  "periodico-pitiusas-atom",
+  "periodico-ibiza-atom",
+  "lavoz-ibiza-rss",
+  "lavoz-general-rss",
+]);
 const MUNICIPAL_AREA_LABELS: Record<string, string> = {
   "Santa Eularia": "Santa Eulària des Riu",
   "Santa Eulària": "Santa Eulària des Riu",
@@ -162,7 +173,7 @@ const toSourceConfig = (source: DatabaseSource): NewsSourceConfig | null => {
   const municipality = source.raw_metadata?.municipality as string | undefined;
   const section = String(source.raw_metadata?.section || "").toLowerCase();
   const sourceScope =
-    municipality || ["ibiza", "pitiusas", "santa-eularia", "santa_eularia", "eivissa", "sant-antoni", "sant_josep"].includes(section)
+    municipality || ["ibiza", "ibiza-news", "formentera", "pitiusas", "santa-eularia", "santa_eularia", "eivissa", "sant-antoni", "sant_josep"].includes(section)
       ? "local"
       : section === "general"
         ? "general"
@@ -292,7 +303,7 @@ const buildTranslationFallback = async (candidate: ClassifiedNewsCandidate, evid
   return {
     headline,
     summary,
-    model: "google_translate_fallback",
+    model: candidate.language === "en" ? "source_metadata_en" : "google_translate_fallback",
     hash: await sha256(`${evidenceHash}|${headline}|${summary}`),
     translationStatus: "translated",
   };
@@ -417,7 +428,7 @@ const getExistingStory = async (supabase: SupabaseClient, sourceKey: string, can
 const getPublishedDigestStories = async (supabase: SupabaseClient, targetDate: string) => {
   const { data, error } = await supabase
     .from("ibiza_news_stories")
-    .select("id,headline,summary,digest_section,source_url,curation_score")
+    .select("id,headline,summary,digest_section,source_url,source_domain,source_label,curation_score")
     .eq("status", "published")
     .eq("story_date", targetDate)
     .not("source_url", "is", null)
@@ -732,6 +743,21 @@ const findSemanticDuplicate = async (supabase: SupabaseClient, candidate: Classi
   const storyDate = candidate.published_at?.slice(0, 10);
   if (!storyDate) return null;
 
+  const canonicalUrl = canonicalizeUrl(candidate.canonical_url);
+  if (canonicalUrl) {
+    const { data: canonicalMatch, error: canonicalError } = await supabase
+      .from("ibiza_news_stories")
+      .select("id,headline,status")
+      .eq("canonical_url", canonicalUrl)
+      .in("status", ["staged", "published"])
+      .limit(1)
+      .maybeSingle();
+    if (canonicalError) throw canonicalError;
+    if (canonicalMatch) {
+      return { match: canonicalMatch as { id: string; headline: string; status: string }, conflict: false };
+    }
+  }
+
   const { data: exact, error: exactError } = await supabase
     .from("ibiza_news_stories")
     .select("id,headline,status")
@@ -928,6 +954,23 @@ serve(async (req) => {
         if (CORE_SOURCE_KEYS.has(source.source_key)) successfulCoreSources += 1;
 
         const rawCandidates = extractCandidates(fetched.text, source).slice(0, request.limit_per_source);
+        const newestItemAt = rawCandidates
+          .map((candidate) => candidate.published_at)
+          .filter((value): value is string => Boolean(value))
+          .sort()
+          .at(-1) ?? null;
+        const { error: snapshotMetadataError } = await supabase
+          .from("news_source_snapshots")
+          .update({
+            raw_metadata: {
+              content_type: fetched.contentType,
+              bytes: fetched.text.length,
+              candidate_count: rawCandidates.length,
+              newest_item_at: newestItemAt,
+            },
+          })
+          .eq("id", snapshot.id);
+        if (snapshotMetadataError) throw snapshotMetadataError;
         candidatesSeen += rawCandidates.length;
 
         for (const rawCandidate of rawCandidates) {
@@ -1005,6 +1048,7 @@ serve(async (req) => {
             publishDecision.publishable &&
               !request.dry_run &&
               request.use_ai &&
+              classified.language !== "en" &&
               aiSummariesUsed < request.max_ai_summaries &&
               needsAiSummary,
           );
@@ -1071,14 +1115,14 @@ serve(async (req) => {
             },
           };
 
-          let storyRow: { id: string; status: string; headline: string; summary: string; digest_section: string; source_url: string; curation_score: number } | null = null;
+          let storyRow: DigestStory & { status: string } | null = null;
 
           if (existingStory) {
             const { data: updated, error: updateError } = await supabase
               .from("ibiza_news_stories")
               .update(storyPayload)
               .eq("id", existingStory.id)
-              .select("id,status,headline,summary,digest_section,source_url,curation_score")
+              .select("id,status,headline,summary,digest_section,source_url,source_domain,source_label,curation_score")
               .single();
 
             if (updateError) throw updateError;
@@ -1087,7 +1131,7 @@ serve(async (req) => {
             const { data: inserted, error: insertError } = await supabase
               .from("ibiza_news_stories")
               .insert(storyPayload)
-              .select("id,status,headline,summary,digest_section,source_url,curation_score")
+              .select("id,status,headline,summary,digest_section,source_url,source_domain,source_label,curation_score")
               .single();
 
             if (insertError) throw insertError;

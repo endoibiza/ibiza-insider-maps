@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canonicalAreaKeys,
+  buildDigestSections,
   calculateCurationScore,
   classifyCandidate,
   extractFeedCandidates,
@@ -22,6 +23,48 @@ const rssSource: NewsSourceConfig = {
 };
 
 describe("Ibiza news ingestion helpers", () => {
+  it("soft-caps one publisher at two-thirds of Top Stories when alternatives exist", () => {
+    const stories = [
+      ...Array.from({ length: 10 }, (_, index) => ({
+        id: `periodico-${index}`,
+        headline: `Periódico story ${index}`,
+        summary: "Verified local summary",
+        digest_section: "island_wide",
+        source_url: `https://www.periodicodeibiza.es/story-${index}.html`,
+        source_domain: "periodicodeibiza.es",
+        curation_score: 100 - index,
+      })),
+      ...Array.from({ length: 4 }, (_, index) => ({
+        id: `diario-${index}`,
+        headline: `Diario story ${index}`,
+        summary: "Verified local summary",
+        digest_section: "island_wide",
+        source_url: `https://www.diariodeibiza.es/story-${index}.html`,
+        source_domain: "diariodeibiza.es",
+        curation_score: 80 - index,
+      })),
+    ];
+
+    const sections = buildDigestSections(stories, "2026-07-31");
+    expect(sections.front_page).toHaveLength(12);
+    expect(sections.front_page.filter((id) => id.startsWith("periodico-"))).toHaveLength(8);
+    expect(sections.front_page.filter((id) => id.startsWith("diario-"))).toHaveLength(4);
+  });
+
+  it("fills Top Stories from the strongest publisher when no alternatives exist", () => {
+    const stories = Array.from({ length: 12 }, (_, index) => ({
+      id: `diario-${index}`,
+      headline: `Diario story ${index}`,
+      summary: "Verified local summary",
+      digest_section: "island_wide",
+      source_url: `https://www.diariodeibiza.es/story-${index}.html`,
+      source_domain: "diariodeibiza.es",
+      curation_score: 100 - index,
+    }));
+
+    expect(buildDigestSections(stories, "2026-07-31").front_page).toHaveLength(12);
+  });
+
   it("emits stable canonical area keys for official and legacy municipality labels", () => {
     expect(canonicalAreaKeys(["Ibiza Town", "Sant Antoni de Portmany", "Formentera"])).toEqual([
       "eivissa",

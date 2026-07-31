@@ -649,12 +649,45 @@ export function shouldPublishCandidate(candidate: ClassifiedNewsCandidate, targe
 }
 
 export function buildDigestSections(
-  stories: Array<{ id: string; headline: string; summary: string; digest_section: string; source_url: string; curation_score?: number | null }>,
+  stories: Array<{
+    id: string;
+    headline: string;
+    summary: string;
+    digest_section: string;
+    source_url: string;
+    source_domain?: string | null;
+    source_label?: string | null;
+    curation_score?: number | null;
+  }>,
   targetDate: string,
 ) {
   const rankedStories = [...stories].sort((left, right) => (right.curation_score ?? 0) - (left.curation_score ?? 0));
+  const frontPageLimit = 12;
+  const publisherLimit = Math.ceil(frontPageLimit * 2 / 3);
+  const publisherCounts = new Map<string, number>();
+  const deferred: typeof rankedStories = [];
+  const frontPage: typeof rankedStories = [];
+
+  for (const story of rankedStories) {
+    if (frontPage.length >= frontPageLimit) break;
+    const publisher = normalizeWhitespace(story.source_domain || story.source_label || "unknown").toLowerCase();
+    const publisherCount = publisherCounts.get(publisher) ?? 0;
+    if (publisherCount >= publisherLimit) {
+      deferred.push(story);
+      continue;
+    }
+    frontPage.push(story);
+    publisherCounts.set(publisher, publisherCount + 1);
+  }
+
+  // Relevance still wins when fewer than 12 qualified alternatives exist.
+  for (const story of deferred) {
+    if (frontPage.length >= frontPageLimit) break;
+    frontPage.push(story);
+  }
+
   const sections = {
-    front_page: rankedStories.slice(0, 12).map((story) => story.id),
+    front_page: frontPage.map((story) => story.id),
     island_wide: rankedStories.filter((story) => story.digest_section === "island_wide").map((story) => story.id),
     santa_eularia: rankedStories.filter((story) => story.digest_section === "santa_eularia").map((story) => story.id),
     new_businesses: rankedStories.filter((story) => story.digest_section === "new_businesses").map((story) => story.id),
