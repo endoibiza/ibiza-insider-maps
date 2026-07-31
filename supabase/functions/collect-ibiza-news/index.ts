@@ -1061,7 +1061,7 @@ serve(async (req) => {
               translationStatus: existingStory!.translation_status as DisplayTextResult["translationStatus"],
             }
             : await summarizeWithAi(classified, evidenceHash, canUseAi);
-          if (summary.model === "google/gemini-2.5-flash") aiSummariesUsed += 1;
+          if (canUseAi && summary.model === "google/gemini-2.5-flash") aiSummariesUsed += 1;
 
           const englishReady = canPublishEnglishText(summary);
           const nextStatus = nextStoryStatus(existingStory?.status, isDuplicate, publishDecision, request, englishReady);
