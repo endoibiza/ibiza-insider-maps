@@ -276,6 +276,51 @@ describe("Ibiza news ingestion helpers", () => {
     expect(classifyCandidate(raw, rssSource).category).toBe("Public Safety");
   });
 
+  it("classifies maritime rescues as Public Safety rather than Environment", () => {
+    const raw: RawNewsCandidate = {
+      source_key: "diario-ibiza-rss",
+      source_name: "Diario de Ibiza — Ibiza",
+      source_type: "rss",
+      publish_mode: "auto",
+      source_url: "https://www.diariodeibiza.es/rss/section/16001",
+      canonical_url: "https://www.diariodeibiza.es/ibiza/2026/07/31/rescatadas-ocho-personas-patera.html",
+      headline: "Eight People Rescued from Dinghy 16 Miles Off Ibiza",
+      source_description: "Eight people were rescued at sea east of Ibiza.",
+      published_at: "2026-07-31T10:00:00.000Z",
+      language: "en",
+      raw_metadata: {},
+    };
+
+    expect(classifyCandidate(raw, rssSource).category).toBe("Public Safety");
+  });
+
+  it("classifies restaurant profiles as Business and downranks lifestyle promotion", () => {
+    const raw: RawNewsCandidate = {
+      source_key: "diario-ibiza-news-en-rss",
+      source_name: "Diario de Ibiza — Ibiza News",
+      source_type: "rss",
+      publish_mode: "auto",
+      source_url: "https://www.diariodeibiza.es/rss/section/2205582",
+      canonical_url: "https://www.diariodeibiza.es/living-ibiza/2026/07/31/cooking-shaped-by-the-sea.html",
+      headline: "Cooking shaped by the sea and respect for the produce",
+      source_description: "A restaurant on Migjorn beach presents Mediterranean cuisine and local produce.",
+      published_at: "2026-07-31T09:00:00.000Z",
+      language: "en",
+      raw_metadata: {},
+    };
+
+    const classified = classifyCandidate(raw, rssSource);
+    const standardBusiness = calculateCurationScore(
+      { ...raw, canonical_url: "https://www.diariodeibiza.es/ibiza/2026/07/31/new-restaurant.html" },
+      "Business",
+      classified.area,
+      "Minor",
+    );
+
+    expect(classified.category).toBe("Business");
+    expect(classified.curation_score).toBeLessThan(standardBusiness);
+  });
+
   it("rejects conflicting people counts between source headline and source description", () => {
     const raw: RawNewsCandidate = {
       source_key: "diario-general-rss",
