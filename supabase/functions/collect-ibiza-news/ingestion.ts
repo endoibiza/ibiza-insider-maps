@@ -62,14 +62,14 @@ const DIRECT_URL_BLOCKLIST = new Set([
 ]);
 
 const CATEGORY_KEYWORDS: Array<[string, RegExp]> = [
-  ["Public Safety", /\b(112|fire|incendi|incendio|bombers|bomberos|police|policia|polic[ií]a|gu[aà]rdia civil|guardia civil|rescue|rescat|recerca|safety|seguretat|seguridad|socorrista|missing person|missing child|disappearance|desaparegut[sd]?|desaparegid[oa]s?|desaparici[oó]n|b[uú]squeda|search (?:operation|effort|party))\b/i],
+  ["Public Safety", /\b(112|fire|incendi|incendio|bombers|bomberos|police|policia|polic[ií]a|gu[aà]rdia civil|guardia civil|rescu(?:e|ed|ing)|rescat|recerca|safety|seguretat|seguridad|socorrista|missing person|missing child|disappearance|desaparegut[sd]?|desaparegid[oa]s?|desaparici[oó]n|b[uú]squeda|search (?:operation|effort|party))\b/i],
   ["Weather Alert", /\b(aemet|weather|storm|rain|pluja|wind|vent|meteo|temporal|calor|heat|(?:alerta|av[ií]s|aviso)\s+(?:meteorol[oò]gic[oa]?|weather|storm|temporal|calor|heat|rain|pluja|wind|vent))\b/i],
   ["Transport", /\b(airport|aeroport|aeropuerto|flight|vols?|ferry|ferris?|bus|taxi|traffic|tr[aà]nsit|transport|road|carretera|port|puerto|parking|aparcament)\b/i],
   ["Crime", /\b(arrest|detenido|detenida|robbery|theft|drug|droga|crime|delito|court|tribunal|prison|violencia|agresi[oó]n)\b/i],
   ["Government", /\b(council|consell|govern|govern balear|gobierno|ministres?|ministros|senador[ae]?|ayuntamiento|ajuntament|plen[oa]|mayor|alcald[ei]?|councillor|regidor[ae]?|municipal)\b/i],
   ["Infrastructure", /\b(works|obres|obras|roadworks|water|aigua|agua|sewer|clavegueram|electric|el[eè]ctric|power|construction|construcci[oó]|vivienda|habitatge|housing)\b/i],
-  ["Environment", /\b(environment|medi ambient|medio ambiente|protecci[oó] ambiental|sea|mar|beach|platja|playa|posidonia|posid[oò]nia|waste|residus|residuos|climate|clima|biodiversity|biodiversitat)\b/i],
   ["Business", /\b(opening|opens|abierto|apertura|restaurant|restaurante|hotel|business|negocio|empresa|comercio|venue|kebab|food|gastronom)\b/i],
+  ["Environment", /\b(environment|medi ambient|medio ambiente|protecci[oó] ambiental|marine|mar|beach|platja|playa|posidonia|posid[oò]nia|waste|residus|residuos|climate|clima|biodiversity|biodiversitat)\b/i],
   ["Tourism", /\b(tourism|turismo|tourist|visitor|hotel|season|temporada|cruise|travel|qu[eé] hacer|places|lugares)\b/i],
   ["Culture", /\b(culture|cultura|music|musica|festival|concert|cine|theatre|teatro|exhibition|exposici[oó]n|misa|artesanal|tradici[oó]n|producto local)\b/i],
   ["Health", /\b(health|salud|hospital|clinic|sanidad|medical|doctor|patient)\b/i],
@@ -505,6 +505,7 @@ export function calculateCurationScore(candidate: RawNewsCandidate, category: st
   if (/\b(housing|vivienda|transport|airport|aeropuerto|bus|taxi|ferry|port|puerto|fire|incendio|police|polic[ií]a|guardia civil|weather|aemet|alerta|opening|apertura|water|agua|waste|residuos)\b/i.test(haystack)) score += 12;
   if (/\b(opini[oó]n|opinion|editorial|hor[oó]scopo|recipe|receta|weather forecast|previsi[oó]n.*tiempo|tiempo.*previsi[oó]n)\b/i.test(haystack)) score -= 28;
   if (/\b(esquela|obituary|necrol[oó]gica|mourns the death|llora la muerte)\b/i.test(haystack)) score -= 45;
+  if (/\/living-ibiza\//i.test(candidate.canonical_url || "") && /\b(restaurant|diner|cuisine|gastronomy|venue|cabaret|hotel)\b/i.test(haystack)) score -= 18;
   if (!candidate.source_description || candidate.source_description.length < 80) score -= 10;
 
   return Math.max(0, Math.min(100, score));
