@@ -1,8 +1,6 @@
 name: Ibiza News Ingestion
 
 on:
-  schedule:
-    - cron: "45 3 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -119,14 +117,23 @@ jobs:
           const defaultBatches = [
             {
               label: "formentera-media",
-              maxAiSummaries: 3,
+              maxAiSummaries: 2,
               sourceKeys: ["radio-illa-actualitat-rss"],
             },
             {
-              label: "core-media",
-              maxAiSummaries: 5,
+              label: "diario-focused",
+              maxAiSummaries: 3,
               sourceKeys: [
-                "diario-general-rss",
+                "diario-ibiza-news-en-rss",
+                "diario-ibiza-rss",
+                "diario-formentera-rss",
+                "diario-santa-eularia-rss",
+              ],
+            },
+            {
+              label: "core-media",
+              maxAiSummaries: 3,
+              sourceKeys: [
                 "periodico-pitiusas-atom",
                 "periodico-ibiza-atom",
                 "periodico-santa-eularia-atom",

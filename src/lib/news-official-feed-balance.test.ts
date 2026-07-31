@@ -1,0 +1,44 @@
+import fs from "node:fs";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+
+const migrationPath = path.resolve(
+  process.cwd(),
+  "supabase/migrations/20260731133000_diario_official_feeds_and_news_monitoring.sql",
+);
+const migration = fs.readFileSync(migrationPath, "utf8");
+
+describe("Diario official feed balance migration", () => {
+  it("registers the four publisher-owned focused feeds and makes the general feed discovery-only", () => {
+    expect(migration).toContain("diario-ibiza-news-en-rss");
+    expect(migration).toContain("/rss/section/2205582");
+    expect(migration).toContain("diario-ibiza-rss");
+    expect(migration).toContain("/rss/section/16001");
+    expect(migration).toContain("diario-formentera-rss");
+    expect(migration).toContain("/rss/section/16023");
+    expect(migration).toContain("diario-santa-eularia-rss");
+    expect(migration).toContain("/rss/section/2094461");
+    expect(migration).toMatch(/WHERE source_key = 'diario-general-rss'[\s\S]*?;/);
+    expect(migration).toContain("publish_mode = 'signal_only'");
+    expect(migration).toContain("INSERT INTO public.x_signal_sources");
+    expect(migration).toContain("canonical_eligible = false");
+  });
+
+  it("adds bounded morning and afternoon Diario packets without increasing the daily AI ceiling", () => {
+    expect(migration).toContain("WHEN 'diario-focused'");
+    expect(migration).toContain("WHEN 'diario-afternoon'");
+    expect(migration).toContain("use_ai := false");
+    expect(migration).toContain("'30 13 * * *'");
+    expect(migration).toContain("max_ai_summaries := 2");
+    expect(migration).toContain("max_ai_summaries := 3");
+  });
+
+  it("keeps monitoring private and reports source freshness and seven-day share", () => {
+    expect(migration).toContain("cron_ops.news_publisher_health");
+    expect(migration).toContain("newest_item_at");
+    expect(migration).toContain("latest_candidate_count");
+    expect(migration).toContain("published_last_7d");
+    expect(migration).toContain("seven_day_share_pct");
+    expect(migration).toContain("REVOKE ALL ON cron_ops.news_publisher_health FROM PUBLIC, anon, authenticated");
+  });
+});
