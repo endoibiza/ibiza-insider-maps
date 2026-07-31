@@ -284,8 +284,8 @@ describe("Ibiza news ingestion helpers", () => {
       publish_mode: "auto",
       source_url: "https://www.diariodeibiza.es/rss/section/16001",
       canonical_url: "https://www.diariodeibiza.es/ibiza/2026/07/31/rescatadas-ocho-personas-patera.html",
-      headline: "Eight People Rescued from Dinghy 16 Miles Off Ibiza",
-      source_description: "Eight people were rescued at sea east of Ibiza.",
+      headline: "Rescatadas ocho personas en una patera a 16 millas de Ibiza",
+      source_description: "Ocho personas fueron rescatadas en el mar al este de Ibiza.",
       published_at: "2026-07-31T10:00:00.000Z",
       language: "en",
       raw_metadata: {},
@@ -319,6 +319,24 @@ describe("Ibiza news ingestion helpers", () => {
 
     expect(classified.category).toBe("Business");
     expect(classified.curation_score).toBeLessThan(standardBusiness);
+  });
+
+  it("does not treat the restaurant name Es Ministre as a government signal", () => {
+    const raw: RawNewsCandidate = {
+      source_key: "diario-ibiza-news-en-rss",
+      source_name: "Diario de Ibiza — Ibiza News",
+      source_type: "rss",
+      publish_mode: "auto",
+      source_url: "https://www.diariodeibiza.es/rss/section/2205582",
+      canonical_url: "https://www.diariodeibiza.es/living-ibiza/2026/07/31/restaurant-in-ses-illetes.html",
+      headline: "A restaurant in ses Illetes with more than half a century of family history",
+      source_description: "Es Ministre is a restaurant serving Mediterranean cuisine beside ses Illetes beach.",
+      published_at: "2026-07-31T09:00:00.000Z",
+      language: "en",
+      raw_metadata: {},
+    };
+
+    expect(classifyCandidate(raw, rssSource).category).toBe("Business");
   });
 
   it("rejects conflicting people counts between source headline and source description", () => {

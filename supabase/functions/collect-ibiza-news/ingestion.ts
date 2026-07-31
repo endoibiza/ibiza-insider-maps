@@ -62,7 +62,7 @@ const DIRECT_URL_BLOCKLIST = new Set([
 ]);
 
 const CATEGORY_KEYWORDS: Array<[string, RegExp]> = [
-  ["Public Safety", /\b(112|fire|incendi|incendio|bombers|bomberos|police|policia|polic[ií]a|gu[aà]rdia civil|guardia civil|rescu(?:e|ed|ing)|rescat|recerca|safety|seguretat|seguridad|socorrista|missing person|missing child|disappearance|desaparegut[sd]?|desaparegid[oa]s?|desaparici[oó]n|b[uú]squeda|search (?:operation|effort|party))\b/i],
+  ["Public Safety", /\b(112|fire|incendi|incendio|bombers|bomberos|police|policia|polic[ií]a|gu[aà]rdia civil|guardia civil|rescu(?:e|ed|ing)|rescat[a-zà-ÿ]*|recerca|safety|seguretat|seguridad|socorrista|missing person|missing child|disappearance|desaparegut[sd]?|desaparegid[oa]s?|desaparici[oó]n|b[uú]squeda|search (?:operation|effort|party))\b/i],
   ["Weather Alert", /\b(aemet|weather|storm|rain|pluja|wind|vent|meteo|temporal|calor|heat|(?:alerta|av[ií]s|aviso)\s+(?:meteorol[oò]gic[oa]?|weather|storm|temporal|calor|heat|rain|pluja|wind|vent))\b/i],
   ["Transport", /\b(airport|aeroport|aeropuerto|flight|vols?|ferry|ferris?|bus|taxi|traffic|tr[aà]nsit|transport|road|carretera|port|puerto|parking|aparcament)\b/i],
   ["Crime", /\b(arrest|detenido|detenida|robbery|theft|drug|droga|crime|delito|court|tribunal|prison|violencia|agresi[oó]n)\b/i],
@@ -413,6 +413,13 @@ export function extractCandidates(content: string, source: NewsSourceConfig): Ra
 
 function classifyCategory(candidate: RawNewsCandidate): string {
   const haystack = removePublisherBoilerplate(`${candidate.headline} ${candidate.source_description ?? ""}`);
+  const headline = removePublisherBoilerplate(candidate.headline);
+  if (
+    /\b(restaurant|restaurante|hotel|venue|gastronom|cuisine|diner)\b/i.test(headline) &&
+    !/\b(council|consell|govern|government|gobierno|ayuntamiento|ajuntament|mayor|alcald[ei]?)\b/i.test(headline)
+  ) {
+    return "Business";
+  }
   for (const [category, pattern] of CATEGORY_KEYWORDS) {
     if (pattern.test(haystack)) return category;
   }
