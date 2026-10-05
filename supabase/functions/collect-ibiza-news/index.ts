@@ -847,6 +847,13 @@ serve(async (req) => {
 
   let runId: string | null = null;
   let supabase: SupabaseClient | null = null;
+  // Keep source evidence available if the run exits before normal finalization.
+  const sourceFailures: Array<Record<string, unknown>> = [];
+  let sourcesSeen = 0;
+  let snapshotsInserted = 0;
+  let candidatesSeen = 0;
+  let storiesStaged = 0;
+  let storiesPublished = 0;
 
   try {
     const supabaseUrl = getRequiredEnv("SUPABASE_URL");
@@ -894,22 +901,18 @@ serve(async (req) => {
     if (sourceError) throw sourceError;
 
     const sources = (sourceRows as DatabaseSource[]).map(toSourceConfig).filter((source): source is NewsSourceConfig => Boolean(source));
+    sourcesSeen = sources.length;
     const sourcesByKey = new Map(sources.map((source) => [source.source_key, source]));
     const selectedCoreCount = sources.filter((source) => CORE_SOURCE_KEYS.has(source.source_key)).length;
     const resolutionMap = await loadResolutionMap(supabase, request.target_date);
 
     let successfulCoreSources = 0;
-    let snapshotsInserted = 0;
-    let candidatesSeen = 0;
-    let storiesStaged = 0;
-    let storiesPublished = 0;
     let duplicatesSeen = 0;
     let aiSummariesUsed = 0;
     let cleanupDemoted = 0;
     let cleanupNormalized = 0;
     const publishedStories: DigestStory[] = [];
     const skippedSources: Array<Record<string, unknown>> = [];
-    const sourceFailures: Array<Record<string, unknown>> = [];
     const sourcesChecked: string[] = [];
 
     for (const source of sources) {
@@ -951,9 +954,8 @@ serve(async (req) => {
           continue;
         }
 
-        if (CORE_SOURCE_KEYS.has(source.source_key)) successfulCoreSources += 1;
-
         const rawCandidates = extractCandidates(fetched.text, source).slice(0, request.limit_per_source);
+        if (CORE_SOURCE_KEYS.has(source.source_key)) successfulCoreSources += 1;
         const newestItemAt = rawCandidates
           .map((candidate) => candidate.published_at)
           .filter((value): value is string => Boolean(value))
@@ -1317,8 +1319,15 @@ serve(async (req) => {
           status: "failed",
           finished_at: new Date().toISOString(),
           error_message: message,
+          sources_seen: sourcesSeen,
+          snapshots_inserted: snapshotsInserted,
+          candidates_seen: candidatesSeen,
+          stories_staged: storiesStaged,
+          stories_published: storiesPublished,
+          source_failures: sourceFailures,
         })
-        .eq("id", runId);
+        .eq("id", runId)
+        .eq("status", "running");
     }
 
     return new Response(JSON.stringify({ ok: false, error: message, run_id: runId }), {

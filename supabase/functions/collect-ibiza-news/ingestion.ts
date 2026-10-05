@@ -299,12 +299,20 @@ export function extractFeedCandidates(xml: string, source: NewsSourceConfig): Ra
     .filter((candidate) => candidate.headline && candidate.canonical_url);
 }
 
+function safeArticleSlug(url: string | null): string {
+  try {
+    return url ? decodeURIComponent(new URL(url).pathname.split('/').filter(Boolean).at(-1) || '') : '';
+  } catch {
+    return '';
+  }
+}
+
 export function extractSitemapCandidates(xml: string, source: NewsSourceConfig): RawNewsCandidate[] {
   return getXmlBlocks(xml, "url")
     .map((entry) => {
       const loc = canonicalizeUrl(getTag(entry, "loc"), source.source_url);
       const lastModified = parseDate(getTag(entry, "lastmod"));
-      const slug = loc ? decodeURIComponent(new URL(loc).pathname.split("/").filter(Boolean).at(-1) || "") : "";
+      const slug = safeArticleSlug(loc);
       const title = normalizeWhitespace(slug.replace(/\.(html|php)$/i, "").replace(/[-_]+/g, " "));
 
       return {
